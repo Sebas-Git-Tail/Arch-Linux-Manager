@@ -1,3 +1,4 @@
+# shellcheck shell=bash
 # Se incluye con source desde Logica/Android.sh: las listas de apps de fábrica que quita
 # el debloat (vienen de Debloat-Clave.sh, versión 5). Son solo datos.
 # Tres niveles (recommended = Básico, advanced = Intermedio, expert = Extremo); cada nivel

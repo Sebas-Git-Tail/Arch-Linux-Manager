@@ -1,0 +1,21 @@
+# Compila la ventana Qt y corre las pruebas de los scripts en cada push (en un Arch Linux limpio).
+name: Compilar y probar
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  arch:
+    runs-on: ubuntu-latest
+    container: archlinux:latest
+    steps:
+      - name: Dependencias
+        run: pacman -Syu --noconfirm --needed git cmake ninja gcc qt6-base shellcheck openssh python iproute2 iputils
+      - uses: actions/checkout@v4
+      - name: Compilar la ventana
+        run: |
+          cmake -S gui -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake --build build
+      - name: Pruebas de los scripts
+        run: tests/correr.sh

@@ -1,3 +1,4 @@
+# shellcheck shell=bash
 # Se incluye con source desde Logica/Minecraft.sh y Logica/Respaldo.sh (antes:
 # Common/Minecraft.sh, ahora sin ventanas). Detecta solos los servidores Paper de todas
 # las versiones, con esta estructura:
