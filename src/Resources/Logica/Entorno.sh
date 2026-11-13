@@ -77,7 +77,7 @@ fi
 # Notificaciones: solo en la compu de Krocante, si el paquete trae la configuración y si
 # responde la máquina destino (por Tailscale)
 destino_notif=""
-if [[ -r "$COMMON/Notificaciones.conf" ]]; then
+if [[ -r "$COMMON/Notificaciones.conf" && -r "$COMMON/Notificaciones.key" ]]; then
     destino_notif=$(source "$COMMON/Notificaciones.conf" && printf '%s' "${NOTIF_DESTINO#*@}")
 fi
 if [[ "$maquina" == krocante && -n "$destino_notif" ]] && responde "$destino_notif"; then

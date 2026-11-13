@@ -107,6 +107,10 @@ package() {
     if [[ -f "$appdir/Resources/Common/Notificaciones.key" ]]; then
         chmod 644 "$appdir/Resources/Common/Notificaciones.key"
     fi
+    # Por las dudas: una configuración vieja con la contraseña ofuscada (NOTIF_CLAVE) nunca va en el paquete
+    if [[ -f "$appdir/Resources/Common/Notificaciones.conf" ]]; then
+        sed -i '/^NOTIF_CLAVE=/d' "$appdir/Resources/Common/Notificaciones.conf"
+    fi
 
     # Acceso al programa
     # Crea el comando /usr/bin/Arch-Linux-Manager: un mini script que ejecuta el programa principal
