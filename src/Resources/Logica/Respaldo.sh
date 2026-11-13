@@ -24,12 +24,18 @@
 #   ERROR <texto>         no se pudo (termina)
 #
 # Código de salida: 0 bien, 1 rsync falló, 2 error (uso, servidor, montaje),
-# 3 contraseña incorrecta, 4 hay servidores de Minecraft encendidos (usar --forzar).
+# 3 contraseña incorrecta, 4 hay servidores de Minecraft encendidos (usar --forzar),
+# 6 la huella del servidor no coincide (otro equipo contestó en su lugar).
+#
+# Historial: cada intento (bien, con error o cancelado) se anota en
+# ~/.local/share/Arch-Linux-Manager/historial-respaldos.tsv, una línea por respaldo:
+#   fecha (ISO)  tipo  resultado (ok|error|cancelado)  segundos  transferido  mensaje
+# La ventana muestra los últimos en la página de cada respaldo.
 
 set -uo pipefail
 
 emitir() { printf '%s\n' "$*"; }
-error() { emitir "ERROR $1"; exit "${2:-2}"; }
+error() { ultimo_mensaje="$1"; emitir "ERROR $1"; exit "${2:-2}"; }
 
 tipo="${1:-}"
 forzar=no
@@ -39,10 +45,37 @@ case "$tipo" in
     *) error "Uso: Respaldo.sh linux|restauracion|carina|minecraft [--forzar]" ;;
 esac
 
+# --- Historial -----------------------------------------------------------------------------
+HISTORIAL="${XDG_DATA_HOME:-$HOME/.local/share}/Arch-Linux-Manager/historial-respaldos.tsv"
+inicio=$(date +%s)
+ultimo_mensaje=""
+transferido=""
+cancelado=no
+anotar_historial() {
+    local codigo=$1 resultado
+    # Minecraft con servidores encendidos (4) no es un intento: la ventana pregunta y repite
+    (( codigo == 4 )) && return
+    if [[ "$cancelado" == si ]]; then resultado=cancelado
+    elif (( codigo == 0 )); then resultado=ok
+    else resultado=error
+    fi
+    mkdir -p "$(dirname "$HISTORIAL")" 2>/dev/null || return
+    # Sin tabuladores ni saltos de línea dentro de los campos
+    printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$(date -Iseconds)" "$tipo" "$resultado" \
+        "$(( $(date +%s) - inicio ))" "${transferido//[$'\t\n']/ }" "${ultimo_mensaje//[$'\t\n']/ }" >> "$HISTORIAL"
+    # Solo los últimos 200
+    if (( $(wc -l < "$HISTORIAL") > 200 )); then
+        tail -n 200 "$HISTORIAL" > "$HISTORIAL.tmp" && mv -f "$HISTORIAL.tmp" "$HISTORIAL"
+    fi
+}
+trap 'anotar_historial $?' EXIT
+# Cancelar desde la ventana manda SIGTERM a todo el grupo
+trap 'cancelado=si; ultimo_mensaje="Cancelado"; exit 130' TERM INT
+
 # Si no viene de la ventana, Common está al lado de esta carpeta (para usarlo desde la terminal)
 COMMON="${COMMON:-$(dirname "$(realpath "$0")")/../Common}"
-source "$COMMON/Servidor.sh"   # usuario, carpeta de respaldos, IPs y responde()
-source "$COMMON/MAC.sh"        # es_maquina_...
+source "$COMMON/Servidor.sh"   # usuario, carpeta de respaldos, IPs, SSH_HUELLAS_SERVIDOR y responde()
+source "$COMMON/Equipo.sh"     # es_maquina_... (elegido a mano o por la MAC)
 
 # Contraseña SSH del servidor: se pide siempre (nada de claves SSH) y no se guarda en ningún
 # lado, ni siquiera como hash. La comprueba el propio servidor más abajo, antes de copiar nada.
@@ -58,14 +91,21 @@ SERVIDOR="$SERVIDOR_USUARIO@$DESTINO"
 # Solo contraseña: PubkeyAuthentication=no evita que ssh pruebe claves (si una tiene frase,
 # sshpass se queda esperando para siempre). Un solo intento: si el servidor vuelve a pedir
 # la contraseña, sshpass corta y devuelve 5.
-SSH_OPCIONES="-o PubkeyAuthentication=no -o PreferredAuthentications=password -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10"
+# SSH_HUELLAS_SERVIDOR (Common/Servidor.sh): solo acepta al servidor si su huella coincide con
+# Common/known_hosts. Antes se aceptaba cualquiera la primera vez, y desde una red
+# ajena otro equipo podía hacerse pasar por el servidor y quedarse con la contraseña.
+SSH_OPCIONES="-o PubkeyAuthentication=no -o PreferredAuthentications=password $SSH_HUELLAS_SERVIDOR -o ConnectTimeout=10"
 
 # Se prueba la contraseña contra el servidor (sshpass devuelve 5 si es incorrecta)
-SSHPASS="$password" sshpass -e ssh $SSH_OPCIONES "$SERVIDOR" true 2>/dev/null
+# shellcheck disable=SC2086
+salida_ssh=$(SSHPASS="$password" sshpass -e ssh $SSH_OPCIONES "$SERVIDOR" true 2>&1)
 case $? in
     0) ;;
     5) error "Contraseña incorrecta." 3 ;;
-    *) error "No se pudo conectar con el servidor ($DESTINO). Revisá la conexión y volvé a intentarlo." 1 ;;
+    *) if [[ "$salida_ssh" == *"Host key verification failed"* || "$salida_ssh" == *"REMOTE HOST IDENTIFICATION HAS CHANGED"* ]]; then
+           error "La huella del servidor ($DESTINO) no es la esperada: no se mandó la contraseña. Si reinstalaste el servidor, hay que actualizar Common/known_hosts (Scripts/actualizar-huellas-ssh.sh) y publicar una versión nueva." 6
+       fi
+       error "No se pudo conectar con el servidor ($DESTINO). Revisá la conexión y volvé a intentarlo." 1 ;;
 esac
 
 # Copia con rsync emitiendo ETAPA/ARCHIVO/PROGRESO. Devuelve el código de rsync.
@@ -87,6 +127,13 @@ copiar() {
         elif [[ "$linea" == rsync:* || "$linea" == "rsync error"* || "$linea" == *"Permission denied"* ]]; then
             # Archivos que no se pudieron copiar y errores de conexión
             emitir "AVISO $linea"
+        elif [[ "$linea" =~ ^sent\ ([^ ]+)\ bytes\ +received\ ([^ ]+)\ bytes ]]; then
+            # Resumen de rsync: para el historial
+            if [[ "$tipo" == restauracion ]]; then
+                transferido="${BASH_REMATCH[2]} recibidos"
+            else
+                transferido="${BASH_REMATCH[1]} enviados"
+            fi
         elif [[ -n "$linea" && "$linea" != "sending incremental file list" \
                 && "$linea" != "receiving incremental file list" \
                 && "$linea" != "created directory "* \
@@ -97,7 +144,7 @@ copiar() {
         fi
     # pipefail: el código que importa es el de rsync, no el de tr
     done < <(set -o pipefail
-             SSHPASS="$password" rsync -ah --info=progress2,name1 \
+             SSHPASS="$password" rsync -ah --info=progress2,name1,stats1 \
                  -e "sshpass -e ssh $SSH_OPCIONES" \
                  "$@" 2>&1 | stdbuf -o0 tr '\r' '\n')
     wait $!
@@ -144,7 +191,8 @@ linux)
         "${excluir_navegador[@]}" \
         "$HOME/" "$SERVIDOR:$SERVIDOR_RESPALDOS/$carpeta/" || error "rsync terminó con errores. Revisá la conexión con el servidor y volvé a intentarlo." 1
     contar "$HOME/.config/Manager/Contador_Respaldos.conf"
-    emitir "LISTO Respaldo completado."
+    ultimo_mensaje="Respaldo completado."
+    emitir "LISTO $ultimo_mensaje"
     ;;
 
 restauracion)
@@ -153,7 +201,8 @@ restauracion)
     # Sin --delete: no borra archivos que no estén en el respaldo
     copiar "Restaurando" "$SERVIDOR:$SERVIDOR_RESPALDOS/$carpeta/" "$HOME/" \
         || error "rsync terminó con errores. Revisá la conexión con el servidor y volvé a intentarlo." 1
-    emitir "LISTO Restauración completada."
+    ultimo_mensaje="Restauración completada."
+    emitir "LISTO $ultimo_mensaje"
     ;;
 
 carina)
@@ -175,7 +224,8 @@ carina)
         "$ORIGEN/Program Files (x86)/S.I.Ap/" "$SERVIDOR:$RUTA/Trabajo de Carina/S.I.Ap/" \
         || error "rsync terminó con errores. Revisá la conexión con el servidor y volvé a intentarlo." 1
     contar "$HOME/.config/Manager/Contador_Respaldos_Carina.conf"
-    emitir "LISTO Listo, que tenga un lindo día."
+    ultimo_mensaje="Listo, que tenga un lindo día."
+    emitir "LISTO $ultimo_mensaje"
     ;;
 
 minecraft)
@@ -197,6 +247,7 @@ minecraft)
         --exclude="cache/" --exclude="libraries/" --exclude="versions/" --exclude="logs/" \
         "$MINECRAFT_DIR/" "$SERVIDOR:$SERVIDOR_RESPALDOS/sebastian/Minecraft/" \
         || error "rsync terminó con errores. Revisá la conexión con el servidor y volvé a intentarlo." 1
-    emitir "LISTO Respaldo de Minecraft completado."
+    ultimo_mensaje="Respaldo de Minecraft completado."
+    emitir "LISTO $ultimo_mensaje"
     ;;
 esac

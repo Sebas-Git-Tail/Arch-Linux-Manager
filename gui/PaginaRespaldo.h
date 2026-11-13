@@ -37,6 +37,7 @@ private:
     void procesarEvento(const QString &linea);
     void anotar(const QString &texto);
     void habilitarFormulario(bool habilitado);
+    void cargarHistorial();
 
     Ui::PaginaRespaldo *ui;
     QString tipo;

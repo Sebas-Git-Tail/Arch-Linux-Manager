@@ -114,6 +114,56 @@
      </property>
     </widget>
    </item>
+   <item>
+    <widget class="QGroupBox" name="grupoHistorial">
+     <property name="title">
+      <string>Últimos respaldos</string>
+     </property>
+     <layout class="QVBoxLayout" name="layoutHistorial">
+      <item>
+       <widget class="QTreeWidget" name="historial">
+        <property name="rootIsDecorated">
+         <bool>false</bool>
+        </property>
+        <property name="uniformRowHeights">
+         <bool>true</bool>
+        </property>
+        <property name="alternatingRowColors">
+         <bool>true</bool>
+        </property>
+        <property name="maximumHeight">
+         <number>170</number>
+        </property>
+        <column>
+         <property name="text">
+          <string>Fecha</string>
+         </property>
+        </column>
+        <column>
+         <property name="text">
+          <string>Resultado</string>
+         </property>
+        </column>
+        <column>
+         <property name="text">
+          <string>Duración</string>
+         </property>
+        </column>
+        <column>
+         <property name="text">
+          <string>Transferido</string>
+         </property>
+        </column>
+        <column>
+         <property name="text">
+          <string>Detalle</string>
+         </property>
+        </column>
+       </widget>
+      </item>
+     </layout>
+    </widget>
+   </item>
   </layout>
  </widget>
  <resources/>

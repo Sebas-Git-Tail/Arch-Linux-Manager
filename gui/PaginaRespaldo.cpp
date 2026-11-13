@@ -1,7 +1,12 @@
 #include "PaginaRespaldo.h"
 #include "ui_PaginaRespaldo.h"
 
+#include <QDateTime>
 #include <QDir>
+#include <QFile>
+#include <QHeaderView>
+#include <QStandardPaths>
+#include <QTreeWidgetItem>
 #include <QFileInfo>
 #include <QFontMetrics>
 #include <QMessageBox>
@@ -47,6 +52,46 @@ PaginaRespaldo::PaginaRespaldo(const QString &tipo, const QString &logica, QWidg
 
     if (!QFileInfo(scriptRespaldo).isFile())
         anotar(tr("No se encontró %1").arg(scriptRespaldo));
+
+    ui->historial->header()->setSectionResizeMode(QHeaderView::ResizeToContents);
+    ui->historial->header()->setStretchLastSection(true);
+    cargarHistorial();
+}
+
+// Últimos respaldos de este tipo, del más nuevo al más viejo. Los anota Respaldo.sh en
+// ~/.local/share/Arch-Linux-Manager/historial-respaldos.tsv:
+//   fecha  tipo  resultado  segundos  transferido  mensaje
+void PaginaRespaldo::cargarHistorial()
+{
+    ui->historial->clear();
+    const QString ruta = QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation)
+                         + QStringLiteral("/Arch-Linux-Manager/historial-respaldos.tsv");
+    QFile archivo(ruta);
+    QList<QStringList> filas;
+    if (archivo.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        while (!archivo.atEnd()) {
+            const QStringList campos = QString::fromUtf8(archivo.readLine()).chopped(1).split(u'\t');
+            if (campos.size() >= 6 && campos.at(1) == tipo)
+                filas.prepend(campos);
+        }
+    }
+    static const QMap<QString, QString> resultados{
+        {QStringLiteral("ok"), QStringLiteral("✓ Bien")},
+        {QStringLiteral("error"), QStringLiteral("✗ Error")},
+        {QStringLiteral("cancelado"), QStringLiteral("– Cancelado")},
+    };
+    for (const QStringList &campos : std::as_const(filas).mid(0, 20)) {
+        const QDateTime fecha = QDateTime::fromString(campos.at(0), Qt::ISODate);
+        const int segundos = campos.at(3).toInt();
+        const QString duracion = segundos >= 3600 ? tr("%1 h %2 min").arg(segundos / 3600).arg(segundos % 3600 / 60)
+                               : segundos >= 60   ? tr("%1 min %2 s").arg(segundos / 60).arg(segundos % 60)
+                                                  : tr("%1 s").arg(segundos);
+        auto *item = new QTreeWidgetItem(ui->historial, {
+            fecha.isValid() ? QLocale().toString(fecha.toLocalTime(), QLocale::ShortFormat) : campos.at(0),
+            resultados.value(campos.at(2), campos.at(2)), duracion, campos.at(4), campos.at(5)});
+        item->setToolTip(4, campos.at(5));
+    }
+    ui->grupoHistorial->setVisible(!filas.isEmpty());
 }
 
 PaginaRespaldo::~PaginaRespaldo()
@@ -197,6 +242,10 @@ void PaginaRespaldo::terminoProceso(int codigo, QProcess::ExitStatus estado)
         ui->barraProgreso->setValue(100);
         ui->etiquetaEstado->setText(QStringLiteral("✓ ") + mensajeFinal);
         emit respaldoTerminado();
+    } else if (codigo == 6) {
+        ui->barraProgreso->hide();
+        ui->etiquetaEstado->setText(QStringLiteral("✗ ") + mensajeFinal);
+        QMessageBox::critical(this, windowTitle(), mensajeFinal);
     } else if (codigo == 3) {
         ui->barraProgreso->hide();
         ui->etiquetaEstado->setText(tr("✗ Contraseña incorrecta, volvé a escribirla."));
@@ -205,4 +254,5 @@ void PaginaRespaldo::terminoProceso(int codigo, QProcess::ExitStatus estado)
         ui->etiquetaEstado->setText(QStringLiteral("✗ ") + (mensajeFinal.isEmpty() ? tr("El respaldo falló.") : mensajeFinal));
     }
     contrasena.clear();    // ya no hace falta en memoria
+    cargarHistorial();
 }
