@@ -1,0 +1,120 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>DialogoPistas</class>
+ <widget class="QDialog" name="DialogoPistas">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>520</width>
+    <height>620</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>Subtítulos y pistas de audio</string>
+  </property>
+  <layout class="QVBoxLayout" name="layoutPrincipal">
+   <item>
+    <widget class="QGroupBox" name="grupoAudios">
+     <property name="title">
+      <string>Pistas de audio</string>
+     </property>
+     <layout class="QVBoxLayout" name="layoutAudios">
+      <item>
+       <widget class="QLabel" name="etiquetaAudios">
+        <property name="text">
+         <string>Marcá los idiomas que quieras: quedan todos dentro del video y la primera marcada es la que suena por defecto. Si no marcás ninguno, se baja la pista original.</string>
+        </property>
+        <property name="wordWrap">
+         <bool>true</bool>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QListWidget" name="listaAudios"/>
+      </item>
+      <item>
+       <layout class="QHBoxLayout" name="layoutBotonesAudios">
+        <item>
+         <widget class="QPushButton" name="botonTodosAudios">
+          <property name="text">
+           <string>Marcar todas</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <spacer name="espacioAudios">
+          <property name="orientation">
+           <enum>Qt::Orientation::Horizontal</enum>
+          </property>
+         </spacer>
+        </item>
+       </layout>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item>
+    <widget class="QGroupBox" name="grupoSubtitulos">
+     <property name="title">
+      <string>Subtítulos</string>
+     </property>
+     <layout class="QVBoxLayout" name="layoutSubtitulos">
+      <item>
+       <widget class="QLabel" name="etiquetaSubtitulos">
+        <property name="text">
+         <string>Los que marques quedan incrustados en el video.</string>
+        </property>
+        <property name="wordWrap">
+         <bool>true</bool>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QLineEdit" name="editFiltro">
+        <property name="placeholderText">
+         <string>Filtrar por idioma…</string>
+        </property>
+        <property name="clearButtonEnabled">
+         <bool>true</bool>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QListWidget" name="listaSubtitulos"/>
+      </item>
+      <item>
+       <widget class="QCheckBox" name="checkAutomaticos">
+        <property name="text">
+         <string>Mostrar todas las traducciones automáticas</string>
+        </property>
+        <property name="toolTip">
+         <string>Sin marcar, de los subtítulos automáticos solo se ven los del idioma original y los traducidos al idioma del sistema</string>
+        </property>
+       </widget>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item>
+    <widget class="QLabel" name="etiquetaAyuda">
+     <property name="text">
+      <string>En mpv, la tecla # cambia de pista de audio y la j de subtítulos.</string>
+     </property>
+     <property name="wordWrap">
+      <bool>true</bool>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <widget class="QDialogButtonBox" name="botones">
+     <property name="standardButtons">
+      <set>QDialogButtonBox::StandardButton::Cancel|QDialogButtonBox::StandardButton::Ok</set>
+     </property>
+    </widget>
+   </item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>

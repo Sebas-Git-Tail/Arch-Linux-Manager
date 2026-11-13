@@ -1,0 +1,264 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>PaginaDescargas</class>
+ <widget class="QWidget" name="PaginaDescargas">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>640</width>
+    <height>720</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>Descargar Vídeos</string>
+  </property>
+  <layout class="QVBoxLayout" name="layoutPrincipal">
+   <item>
+    <widget class="QGroupBox" name="grupoUrls">
+     <property name="title">
+      <string>URLs (una por línea)</string>
+     </property>
+     <layout class="QVBoxLayout" name="layoutUrls">
+      <item>
+       <widget class="QPlainTextEdit" name="editUrls">
+        <property name="placeholderText">
+         <string>https://www.youtube.com/watch?v=...</string>
+        </property>
+       </widget>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item>
+    <layout class="QHBoxLayout" name="layoutOpciones">
+     <item>
+      <widget class="QLabel" name="etiquetaPlataforma">
+       <property name="text">
+        <string>Plataforma:</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QComboBox" name="comboPlataforma">
+       <item>
+        <property name="text">
+         <string>YouTube</string>
+        </property>
+       </item>
+       <item>
+        <property name="text">
+         <string>Redes sociales</string>
+        </property>
+       </item>
+      </widget>
+     </item>
+     <item>
+      <widget class="QCheckBox" name="checkPlaylist">
+       <property name="text">
+        <string>Bajar la playlist completa</string>
+       </property>
+       <property name="toolTip">
+        <string>Si la URL es de una canción dentro de una playlist, baja toda la lista (si no, solo esa canción)</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QCheckBox" name="checkPistas">
+       <property name="text">
+        <string>Elegir subtítulos y audio</string>
+       </property>
+       <property name="toolTip">
+        <string>Antes de descargar busca qué subtítulos y qué pistas de audio (idiomas) ofrece el video y deja elegir cuáles incluir. Quedan dentro del archivo.</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <spacer name="espacioOpciones">
+       <property name="orientation">
+        <enum>Qt::Orientation::Horizontal</enum>
+       </property>
+      </spacer>
+     </item>
+     <item>
+      <widget class="QPushButton" name="botonYoutubeMusic">
+       <property name="text">
+        <string>Abrir YouTube Music</string>
+       </property>
+       <property name="icon">
+        <iconset theme="internet-web-browser"/>
+       </property>
+       <property name="flat">
+        <bool>true</bool>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QCheckBox" name="checkCookies">
+       <property name="text">
+        <string>Usar cookies del navegador</string>
+       </property>
+      </widget>
+     </item>
+    </layout>
+   </item>
+   <item>
+    <widget class="QWidget" name="filaCarpeta" native="true">
+     <layout class="QHBoxLayout" name="layoutCarpeta">
+      <property name="leftMargin">
+       <number>0</number>
+      </property>
+      <property name="rightMargin">
+       <number>0</number>
+      </property>
+      <item>
+       <widget class="QLabel" name="etiquetaCarpeta">
+        <property name="text">
+         <string>Guardar en:</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QLineEdit" name="editCarpeta"/>
+      </item>
+      <item>
+       <widget class="QPushButton" name="botonElegirCarpeta">
+        <property name="text">
+         <string>Elegir…</string>
+        </property>
+       </widget>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item>
+    <layout class="QHBoxLayout" name="layoutBotones">
+     <item>
+      <widget class="QPushButton" name="botonDescargar">
+       <property name="text">
+        <string>▶ Descargar</string>
+       </property>
+       <property name="default">
+        <bool>true</bool>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QPushButton" name="botonCancelar">
+       <property name="enabled">
+        <bool>false</bool>
+       </property>
+       <property name="text">
+        <string>Cancelar</string>
+       </property>
+      </widget>
+     </item>
+    </layout>
+   </item>
+   <item>
+    <widget class="QLabel" name="etiquetaEstado">
+     <property name="text">
+      <string>Pegá una o más URLs y tocá Descargar.</string>
+     </property>
+     <property name="wordWrap">
+      <bool>true</bool>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <widget class="QProgressBar" name="barraArchivo">
+     <property name="value">
+      <number>0</number>
+     </property>
+     <property name="format">
+      <string>Archivo: %p%</string>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <widget class="QProgressBar" name="barraTotal">
+     <property name="value">
+      <number>0</number>
+     </property>
+     <property name="format">
+      <string>URLs: %v de %m</string>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <widget class="QGroupBox" name="grupoDescargados">
+     <property name="title">
+      <string>Descargados</string>
+     </property>
+     <layout class="QVBoxLayout" name="layoutDescargados">
+      <item>
+       <widget class="QListWidget" name="listaVideos">
+        <property name="iconSize">
+         <size>
+          <width>96</width>
+          <height>54</height>
+         </size>
+        </property>
+        <property name="selectionMode">
+         <enum>QAbstractItemView::SelectionMode::ExtendedSelection</enum>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <layout class="QHBoxLayout" name="layoutAcciones">
+        <item>
+         <widget class="QPushButton" name="botonVer">
+          <property name="enabled">
+           <bool>false</bool>
+          </property>
+          <property name="text">
+           <string>Ver con mpv</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QPushButton" name="botonAbrirCarpeta">
+          <property name="enabled">
+           <bool>false</bool>
+          </property>
+          <property name="text">
+           <string>Abrir carpeta</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QPushButton" name="botonPapelera">
+          <property name="enabled">
+           <bool>false</bool>
+          </property>
+          <property name="text">
+           <string>Mover a la papelera</string>
+          </property>
+         </widget>
+        </item>
+       </layout>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item>
+    <widget class="QPlainTextEdit" name="registro">
+     <property name="maximumSize">
+      <size>
+       <width>16777215</width>
+       <height>90</height>
+      </size>
+     </property>
+     <property name="readOnly">
+      <bool>true</bool>
+     </property>
+     <property name="placeholderText">
+      <string>Avisos y errores</string>
+     </property>
+    </widget>
+   </item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>

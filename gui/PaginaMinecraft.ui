@@ -1,0 +1,192 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>PaginaMinecraft</class>
+ <widget class="QWidget" name="PaginaMinecraft">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>680</width>
+    <height>720</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>Panel de Minecraft</string>
+  </property>
+  <layout class="QVBoxLayout" name="layoutPrincipal">
+   <item>
+    <widget class="QGroupBox" name="grupoServidores">
+     <property name="title">
+      <string>Servidores Paper (marcá los que van a recibir un plugin)</string>
+     </property>
+     <layout class="QVBoxLayout" name="layoutServidores">
+      <item>
+       <widget class="QListWidget" name="listaServidores"/>
+      </item>
+      <item>
+       <layout class="QHBoxLayout" name="layoutAccionesServidor">
+        <item>
+         <widget class="QPushButton" name="botonIniciar">
+          <property name="enabled">
+           <bool>false</bool>
+          </property>
+          <property name="text">
+           <string>Iniciar</string>
+          </property>
+          <property name="icon">
+           <iconset theme="media-playback-start"/>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QPushButton" name="botonReiniciar">
+          <property name="enabled">
+           <bool>false</bool>
+          </property>
+          <property name="text">
+           <string>Reiniciar</string>
+          </property>
+          <property name="icon">
+           <iconset theme="view-refresh"/>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <spacer name="espacioServidores">
+          <property name="orientation">
+           <enum>Qt::Orientation::Horizontal</enum>
+          </property>
+         </spacer>
+        </item>
+        <item>
+         <widget class="QPushButton" name="botonActualizarLista">
+          <property name="text">
+           <string>Actualizar lista</string>
+          </property>
+         </widget>
+        </item>
+       </layout>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item>
+    <widget class="QGroupBox" name="grupoPaper">
+     <property name="title">
+      <string>Actualizar Paper (en los servidores apagados de esa versión)</string>
+     </property>
+     <layout class="QHBoxLayout" name="layoutPaper">
+      <item>
+       <widget class="QComboBox" name="comboVersion">
+        <property name="sizeAdjustPolicy">
+         <enum>QComboBox::SizeAdjustPolicy::AdjustToContents</enum>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QLineEdit" name="editUrlPaper">
+        <property name="placeholderText">
+         <string>URL del .jar de Paper</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QPushButton" name="botonPaper">
+        <property name="text">
+         <string>Actualizar</string>
+        </property>
+       </widget>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item>
+    <widget class="QGroupBox" name="grupoPlugin">
+     <property name="title">
+      <string>Plugin de Modrinth (en los servidores marcados)</string>
+     </property>
+     <layout class="QHBoxLayout" name="layoutPlugin">
+      <item>
+       <widget class="QLineEdit" name="editUrlPlugin">
+        <property name="placeholderText">
+         <string>URL del .jar en Modrinth</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QPushButton" name="botonPlugin">
+        <property name="text">
+         <string>Instalar</string>
+        </property>
+       </widget>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item>
+    <widget class="QGroupBox" name="grupoPrism">
+     <property name="title">
+      <string>Prism Launcher (entra directo al servidor de casa)</string>
+     </property>
+     <layout class="QHBoxLayout" name="layoutPrism">
+      <item>
+       <widget class="QComboBox" name="comboInstancia">
+        <property name="sizePolicy">
+         <sizepolicy hsizetype="Expanding" vsizetype="Fixed">
+          <horstretch>0</horstretch>
+          <verstretch>0</verstretch>
+         </sizepolicy>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QPushButton" name="botonJugar">
+        <property name="text">
+         <string>Jugar</string>
+        </property>
+        <property name="icon">
+         <iconset theme="input-gaming"/>
+        </property>
+       </widget>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item>
+    <widget class="QLabel" name="etiquetaEstado">
+     <property name="text">
+      <string/>
+     </property>
+     <property name="wordWrap">
+      <bool>true</bool>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <widget class="QProgressBar" name="barraProgreso">
+     <property name="value">
+      <number>0</number>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <widget class="QPlainTextEdit" name="registro">
+     <property name="maximumSize">
+      <size>
+       <width>16777215</width>
+       <height>110</height>
+      </size>
+     </property>
+     <property name="readOnly">
+      <bool>true</bool>
+     </property>
+     <property name="placeholderText">
+      <string>Avisos y errores</string>
+     </property>
+    </widget>
+   </item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>

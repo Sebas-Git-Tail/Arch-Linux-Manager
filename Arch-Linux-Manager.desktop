@@ -1,0 +1,17 @@
+# Acceso directo del menú de aplicaciones de KDE Plasma
+# (el PKGBUILD lo instala en /usr/share/applications)
+[Desktop Entry]
+Type=Application
+Name=Arch-Linux-Manager
+Comment=Conjunto de herramientas y utilidades GUI para Arch Linux
+# Comando que se ejecuta al abrirlo (el que crea el PKGBUILD en /usr/bin)
+Exec=Arch-Linux-Manager
+# Ícono: el logo que viene con la app
+Icon=/usr/share/Arch-Linux-Manager/Resources/Logo.png
+# Se abre sin ventana de terminal
+Terminal=false
+StartupNotify=true
+# Sección del menú donde aparece (Utilidades)
+Categories=Qt;KDE;Utility;
+# Atajo de teclado de KDE para abrirlo: Meta (tecla de Windows) + Shift + I
+X-KDE-Shortcuts=Meta+Shift+I

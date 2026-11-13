@@ -1,0 +1,225 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>PaginaAndroid</class>
+ <widget class="QWidget" name="PaginaAndroid">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>640</width>
+    <height>640</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>Celular Android</string>
+  </property>
+  <layout class="QVBoxLayout" name="layoutPrincipal">
+   <item>
+    <widget class="QGroupBox" name="grupoCelular">
+     <property name="title">
+      <string>Celular conectado por adb</string>
+     </property>
+     <layout class="QVBoxLayout" name="layoutCelular">
+      <item>
+       <layout class="QHBoxLayout" name="layoutElegir">
+        <item>
+         <widget class="QComboBox" name="comboCelular">
+          <property name="sizePolicy">
+           <sizepolicy hsizetype="Expanding" vsizetype="Fixed">
+            <horstretch>0</horstretch>
+            <verstretch>0</verstretch>
+           </sizepolicy>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QPushButton" name="botonBuscar">
+          <property name="text">
+           <string>Buscar</string>
+          </property>
+          <property name="icon">
+           <iconset theme="view-refresh"/>
+          </property>
+         </widget>
+        </item>
+       </layout>
+      </item>
+      <item>
+       <widget class="QLabel" name="etiquetaCelular">
+        <property name="text">
+         <string/>
+        </property>
+        <property name="wordWrap">
+         <bool>true</bool>
+        </property>
+       </widget>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item>
+    <widget class="QGroupBox" name="grupoApps">
+     <property name="title">
+      <string>Apps FOSS</string>
+     </property>
+     <layout class="QHBoxLayout" name="layoutApps">
+      <item>
+       <widget class="QLabel" name="etiquetaApps">
+        <property name="text">
+         <string>Instala Fossify Camera y SD Maid SE (la versión que recomienda F-Droid).</string>
+        </property>
+        <property name="wordWrap">
+         <bool>true</bool>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QPushButton" name="botonApps">
+        <property name="text">
+         <string>Instalar</string>
+        </property>
+        <property name="icon">
+         <iconset theme="download"/>
+        </property>
+       </widget>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item>
+    <widget class="QGroupBox" name="grupoDebloat">
+     <property name="title">
+      <string>Debloat</string>
+     </property>
+     <layout class="QVBoxLayout" name="layoutDebloat">
+      <item>
+       <widget class="QLabel" name="etiquetaDebloat">
+        <property name="text">
+         <string>Quita apps de fábrica para el usuario de Android elegido, sin borrarlas del sistema: un restablecimiento de fábrica las devuelve. Cada nivel quita solo sus propias apps (Intermedio no incluye las de Básico).</string>
+        </property>
+        <property name="wordWrap">
+         <bool>true</bool>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <layout class="QHBoxLayout" name="layoutUsuario">
+        <item>
+         <widget class="QLabel" name="etiquetaUsuario">
+          <property name="text">
+           <string>Usuario de Android:</string>
+          </property>
+          <property name="buddy">
+           <cstring>comboUsuario</cstring>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QComboBox" name="comboUsuario">
+          <property name="sizePolicy">
+           <sizepolicy hsizetype="Expanding" vsizetype="Fixed">
+            <horstretch>0</horstretch>
+            <verstretch>0</verstretch>
+           </sizepolicy>
+          </property>
+          <property name="toolTip">
+           <string>Los usuarios se detectan en el celular: el principal (0) y, si los tiene, el segundo espacio, las apps duales, el perfil de trabajo…</string>
+          </property>
+         </widget>
+        </item>
+       </layout>
+      </item>
+      <item>
+       <layout class="QHBoxLayout" name="layoutNiveles">
+        <item>
+         <widget class="QRadioButton" name="radioBasico">
+          <property name="text">
+           <string>Básico (recomendado)</string>
+          </property>
+          <property name="checked">
+           <bool>true</bool>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QRadioButton" name="radioIntermedio">
+          <property name="text">
+           <string>Intermedio</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QRadioButton" name="radioExtremo">
+          <property name="text">
+           <string>Extremo (quita Play Store)</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <spacer name="espacioNiveles">
+          <property name="orientation">
+           <enum>Qt::Orientation::Horizontal</enum>
+          </property>
+         </spacer>
+        </item>
+        <item>
+         <widget class="QPushButton" name="botonDebloat">
+          <property name="text">
+           <string>Quitar apps</string>
+          </property>
+          <property name="icon">
+           <iconset theme="edit-delete"/>
+          </property>
+         </widget>
+        </item>
+       </layout>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item>
+    <layout class="QHBoxLayout" name="layoutEstado">
+     <item>
+      <widget class="QLabel" name="etiquetaEstado">
+       <property name="text">
+        <string/>
+       </property>
+       <property name="wordWrap">
+        <bool>true</bool>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QPushButton" name="botonCancelar">
+       <property name="enabled">
+        <bool>false</bool>
+       </property>
+       <property name="text">
+        <string>Cancelar</string>
+       </property>
+      </widget>
+     </item>
+    </layout>
+   </item>
+   <item>
+    <widget class="QProgressBar" name="barraProgreso">
+     <property name="value">
+      <number>0</number>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <widget class="QPlainTextEdit" name="registro">
+     <property name="readOnly">
+      <bool>true</bool>
+     </property>
+     <property name="placeholderText">
+      <string>Avisos y errores</string>
+     </property>
+    </widget>
+   </item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>

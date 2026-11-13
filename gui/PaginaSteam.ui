@@ -1,0 +1,158 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>PaginaSteam</class>
+ <widget class="QWidget" name="PaginaSteam">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>640</width>
+    <height>600</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>Steam Proton</string>
+  </property>
+  <layout class="QVBoxLayout" name="layoutPrincipal">
+   <item>
+    <widget class="QLabel" name="etiquetaDescripcion">
+     <property name="text">
+      <string>GE-Proton es una versión de Proton con más arreglos para juegos. Se instala en ~/.local/share/Steam/compatibilitytools.d y reemplaza a las versiones anteriores. Después hay que elegirlo en los ajustes de compatibilidad de Steam.</string>
+     </property>
+     <property name="wordWrap">
+      <bool>true</bool>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <widget class="QGroupBox" name="grupoVersiones">
+     <property name="title">
+      <string>Versiones</string>
+     </property>
+     <layout class="QFormLayout" name="layoutVersiones">
+      <item row="0" column="0">
+       <widget class="QLabel" name="rotuloInstalada">
+        <property name="text">
+         <string>Instalada:</string>
+        </property>
+       </widget>
+      </item>
+      <item row="0" column="1">
+       <widget class="QLabel" name="etiquetaInstalada">
+        <property name="text">
+         <string>…</string>
+        </property>
+       </widget>
+      </item>
+      <item row="1" column="0">
+       <widget class="QLabel" name="rotuloUltima">
+        <property name="text">
+         <string>Última:</string>
+        </property>
+       </widget>
+      </item>
+      <item row="1" column="1">
+       <widget class="QLabel" name="etiquetaUltima">
+        <property name="text">
+         <string>…</string>
+        </property>
+       </widget>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item>
+    <layout class="QHBoxLayout" name="layoutBotones">
+     <item>
+      <widget class="QPushButton" name="botonInstalarUltima">
+       <property name="enabled">
+        <bool>false</bool>
+       </property>
+       <property name="text">
+        <string>Instalar la última</string>
+       </property>
+       <property name="icon">
+        <iconset theme="download"/>
+       </property>
+       <property name="default">
+        <bool>true</bool>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QPushButton" name="botonVersiones">
+       <property name="text">
+        <string>Ver todas las versiones</string>
+       </property>
+       <property name="icon">
+        <iconset theme="internet-web-browser"/>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QPushButton" name="botonCancelar">
+       <property name="enabled">
+        <bool>false</bool>
+       </property>
+       <property name="text">
+        <string>Cancelar</string>
+       </property>
+      </widget>
+     </item>
+    </layout>
+   </item>
+   <item>
+    <widget class="QGroupBox" name="grupoOtra">
+     <property name="title">
+      <string>Otra versión (URL del .tar.gz)</string>
+     </property>
+     <layout class="QHBoxLayout" name="layoutOtra">
+      <item>
+       <widget class="QLineEdit" name="editUrl">
+        <property name="placeholderText">
+         <string>https://github.com/GloriousEggroll/proton-ge-custom/releases/download/…</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QPushButton" name="botonInstalarUrl">
+        <property name="text">
+         <string>Instalar</string>
+        </property>
+       </widget>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item>
+    <widget class="QLabel" name="etiquetaEstado">
+     <property name="text">
+      <string/>
+     </property>
+     <property name="wordWrap">
+      <bool>true</bool>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <widget class="QProgressBar" name="barraProgreso">
+     <property name="value">
+      <number>0</number>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <widget class="QPlainTextEdit" name="registro">
+     <property name="readOnly">
+      <bool>true</bool>
+     </property>
+     <property name="placeholderText">
+      <string>Avisos y errores</string>
+     </property>
+    </widget>
+   </item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>
