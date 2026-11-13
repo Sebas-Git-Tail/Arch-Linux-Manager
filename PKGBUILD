@@ -5,7 +5,7 @@
 # Datos del paquete: nombre, versión del programa (pkgver) y número de compilación
 # de esa misma versión (pkgrel)
 pkgname=Arch-Linux-Manager
-pkgver=4.2.0
+pkgver=4.3.0
 pkgrel=1
 pkgdesc="A useful set of GUI scripts for Arch Linux"
 # Ya no es «any»: la ventana Qt (gui/) se compila para cada procesador
@@ -25,7 +25,7 @@ depends=(
     'python'
     # respaldos y restauraciones
     'rsync'
-    # le pasa la contraseña a ssh sin tener que escribirla
+    # le pasa la contraseña de los respaldos a ssh (se pide cada vez, no se guarda)
     'sshpass'
     # lo usa yt-dlp para incrustar la carátula y los datos en el audio
     'python-mutagen'
@@ -100,6 +100,13 @@ package() {
     # Ojo: Resources se toma de src/, que es la carpeta de trabajo de makepkg.
     # «makepkg -c» y «makepkg -C» borran src/, y con ella Resources.
     cp -a "$startdir/src/Resources" "$appdir/"
+
+    # La clave de notificaciones se lee como el usuario que abre el Manager: tiene que ser legible
+    # (ssh no se queja de los permisos porque el archivo es de root). Solo sirve para mostrar una
+    # notificación en la PC de Sebastián (ver Scripts/generar-clave-notificaciones.sh).
+    if [[ -f "$appdir/Resources/Common/Notificaciones.key" ]]; then
+        chmod 644 "$appdir/Resources/Common/Notificaciones.key"
+    fi
 
     # Acceso al programa
     # Crea el comando /usr/bin/Arch-Linux-Manager: un mini script que ejecuta el programa principal
