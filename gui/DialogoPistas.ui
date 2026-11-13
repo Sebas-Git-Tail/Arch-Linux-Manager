@@ -7,13 +7,76 @@
     <x>0</x>
     <y>0</y>
     <width>520</width>
-    <height>620</height>
+    <height>760</height>
    </rect>
   </property>
   <property name="windowTitle">
-   <string>Subtítulos y pistas de audio</string>
+   <string>Calidad, códecs, audio y subtítulos</string>
   </property>
   <layout class="QVBoxLayout" name="layoutPrincipal">
+   <item>
+    <widget class="QGroupBox" name="grupoCalidad">
+     <property name="title">
+      <string>Calidad y códecs</string>
+     </property>
+     <layout class="QFormLayout" name="layoutCalidad">
+      <item row="0" column="0">
+       <widget class="QLabel" name="etiquetaComboCalidad">
+        <property name="text">
+         <string>Calidad:</string>
+        </property>
+        <property name="buddy">
+         <cstring>comboCalidad</cstring>
+        </property>
+       </widget>
+      </item>
+      <item row="0" column="1">
+       <widget class="QComboBox" name="comboCalidad">
+        <property name="toolTip">
+         <string>Altura máxima del video. Si un video no la tiene, se baja la más cercana por debajo.</string>
+        </property>
+       </widget>
+      </item>
+      <item row="1" column="0">
+       <widget class="QLabel" name="etiquetaComboVcodec">
+        <property name="text">
+         <string>Códec de video:</string>
+        </property>
+        <property name="buddy">
+         <cstring>comboVcodec</cstring>
+        </property>
+       </widget>
+      </item>
+      <item row="1" column="1">
+       <widget class="QComboBox" name="comboVcodec">
+        <property name="toolTip">
+         <string>AV1 y VP9 ocupan menos; H.264 se puede reproducir en casi cualquier aparato.</string>
+        </property>
+       </widget>
+      </item>
+      <item row="2" column="0">
+       <widget class="QLabel" name="etiquetaComboAcodec">
+        <property name="text">
+         <string>Códec de audio:</string>
+        </property>
+        <property name="buddy">
+         <cstring>comboAcodec</cstring>
+        </property>
+       </widget>
+      </item>
+      <item row="2" column="1">
+       <widget class="QComboBox" name="comboAcodec"/>
+      </item>
+      <item row="3" column="0" colspan="2">
+       <widget class="QLabel" name="etiquetaCalidad">
+        <property name="wordWrap">
+         <bool>true</bool>
+        </property>
+       </widget>
+      </item>
+     </layout>
+    </widget>
+   </item>
    <item>
     <widget class="QGroupBox" name="grupoAudios">
      <property name="title">

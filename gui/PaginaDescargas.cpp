@@ -1,4 +1,6 @@
 #include "PaginaDescargas.h"
+
+#include <algorithm>
 #include "ui_PaginaDescargas.h"
 
 #include <QDesktopServices>
@@ -164,16 +166,16 @@ void PaginaDescargas::descargar()
     cancelado = false;
     habilitarFormulario(false);
 
-    // En Vídeos, si se pidió, antes de descargar se averigua qué subtítulos y pistas de
-    // audio ofrece el video para elegirlos
+    // En Vídeos, si se pidió, antes de descargar se averigua qué calidades, códecs,
+    // subtítulos y pistas de audio ofrece el video para elegirlos
     if (tipo == Tipo::Videos && ui->checkPistas->isChecked())
         buscarPistas();
     else
-        iniciarDescarga({}, {});
+        iniciarDescarga({});
 }
 
-// Paso previo de «Elegir subtítulos y audio»: Descargar.sh --pistas informa qué ofrece cada
-// URL (eventos AUDIO y SUBTITULO). Cuando termina, terminoPistas() abre el diálogo.
+// Paso previo de «Elegir calidad, audio y subtítulos»: Descargar.sh --pistas informa qué
+// ofrece cada URL (eventos AUDIO, SUBTITULO, VIDEO y ACODEC). Al terminar, terminoPistas() abre el diálogo.
 void PaginaDescargas::buscarPistas()
 {
     QStringList argumentos{scriptDescargar, QStringLiteral("--pistas")};
@@ -185,11 +187,13 @@ void PaginaDescargas::buscarPistas()
     fallidas = 0;
     audiosOfrecidos.clear();
     subtitulosOfrecidos.clear();
+    formatosOfrecidos.clear();
+    codecsAudioOfrecidos.clear();
     ui->barraArchivo->hide();
     ui->barraTotal->setRange(0, urlsEnCurso.size());
     ui->barraTotal->setValue(0);
     ui->barraTotal->show();
-    ui->etiquetaEstado->setText(tr("Buscando subtítulos y pistas de audio…"));
+    ui->etiquetaEstado->setText(tr("Buscando calidades, subtítulos y pistas de audio…"));
 
     proceso.start(QStringLiteral("bash"), argumentos);
 }
@@ -203,15 +207,16 @@ void PaginaDescargas::terminoPistas(int codigo, QProcess::ExitStatus estado)
     } else if (estado == QProcess::CrashExit || codigo == 2 || fallidas == urlsEnCurso.size()) {
         // Si no se pudo consultar ninguna URL, tampoco se van a poder descargar
         terminar(tr("No se pudo descargar (ver los avisos abajo)."));
-    } else if (audiosOfrecidos.size() < 2 && subtitulosOfrecidos.isEmpty()) {
-        anotar(tr("No hay subtítulos ni otras pistas de audio para elegir: se descarga como siempre."));
-        iniciarDescarga({}, {});
+    } else if (audiosOfrecidos.size() < 2 && subtitulosOfrecidos.isEmpty() && formatosOfrecidos.isEmpty()) {
+        anotar(tr("No hay calidades, subtítulos ni otras pistas de audio para elegir: se descarga como siempre."));
+        iniciarDescarga({});
     } else {
         ui->barraTotal->setValue(ui->barraTotal->maximum());
-        ui->etiquetaEstado->setText(tr("Elegí qué subtítulos y pistas de audio incluir."));
-        DialogoPistas dialogo(audiosOfrecidos.values(), subtitulosOfrecidos.values(), this);
-        if (dialogo.exec() == QDialog::Accepted)
-            iniciarDescarga(dialogo.audiosElegidos(), dialogo.subtitulosElegidos());
+        ui->etiquetaEstado->setText(tr("Elegí la calidad, los códecs y qué subtítulos y pistas de audio incluir."));
+        DialogoPistas dialogo(audiosOfrecidos.values(), subtitulosOfrecidos.values(), formatosOfrecidos,
+                              codecsAudioOfrecidos, this);
+        if (dialogo.abrir() == QDialog::Accepted)
+            iniciarDescarga(dialogo.eleccion());
         else
             terminar(tr("Descarga cancelada."));
     }
@@ -226,8 +231,8 @@ void PaginaDescargas::terminar(const QString &estado)
     ui->etiquetaEstado->setText(estado);
 }
 
-// audios y subtitulos: los idiomas elegidos en el diálogo (vacíos = descarga de siempre)
-void PaginaDescargas::iniciarDescarga(const QStringList &audios, const QStringList &subtitulos)
+// eleccion: lo elegido en el diálogo (vacío = descarga de siempre, en MKV)
+void PaginaDescargas::iniciarDescarga(const Eleccion &eleccion)
 {
     QStringList argumentos{scriptDescargar, QStringLiteral("--destino"), carpetaEnCurso};
     if (tipo != Tipo::Archivos)
@@ -239,10 +244,16 @@ void PaginaDescargas::iniciarDescarga(const QStringList &audios, const QStringLi
     }
     if (ui->checkCookies->isChecked())
         argumentos << QStringLiteral("--cookies");
-    if (!audios.isEmpty())
-        argumentos << QStringLiteral("--audios") << audios.join(u',');
-    if (!subtitulos.isEmpty())
-        argumentos << QStringLiteral("--subtitulos") << subtitulos.join(u',');
+    if (!eleccion.audios.isEmpty())
+        argumentos << QStringLiteral("--audios") << eleccion.audios.join(u',');
+    if (!eleccion.subtitulos.isEmpty())
+        argumentos << QStringLiteral("--subtitulos") << eleccion.subtitulos.join(u',');
+    if (eleccion.calidad > 0)
+        argumentos << QStringLiteral("--calidad") << QString::number(eleccion.calidad);
+    if (!eleccion.vcodec.isEmpty())
+        argumentos << QStringLiteral("--vcodec") << eleccion.vcodec;
+    if (!eleccion.acodec.isEmpty())
+        argumentos << QStringLiteral("--acodec") << eleccion.acodec;
     argumentos << QStringLiteral("--") << urlsEnCurso;
 
     fallidas = listas = 0;
@@ -294,7 +305,7 @@ void PaginaDescargas::procesarEvento(const QString &linea)
         ui->barraTotal->setValue(n - 1);
         ui->barraArchivo->setValue(0);
         ui->etiquetaEstado->setText(buscandoPistas
-                ? tr("Buscando subtítulos y pistas de audio (URL %1 de %2)…").arg(n).arg(partes.value(1))
+                ? tr("Buscando calidades, subtítulos y pistas de audio (URL %1 de %2)…").arg(n).arg(partes.value(1))
                 : tr("URL %1 de %2: %3").arg(n).arg(partes.value(1), partes.value(2)));
     } else if (evento == u"AUDIO") {
         // AUDIO idioma ORIGINAL|OTRA
@@ -310,6 +321,17 @@ void PaginaDescargas::procesarEvento(const QString &linea)
         const auto existente = subtitulosOfrecidos.constFind(idioma);
         if (existente == subtitulosOfrecidos.cend() || (existente->automatico && !automatico))
             subtitulosOfrecidos.insert(idioma, Subtitulo{idioma, automatico, resto.section(u' ', 2)});
+    } else if (evento == u"VIDEO") {
+        // VIDEO alto familia
+        const FormatoVideo formato{resto.section(u' ', 0, 0).toInt(), resto.section(u' ', 1, 1)};
+        const bool repetido = std::any_of(formatosOfrecidos.cbegin(), formatosOfrecidos.cend(), [&](const FormatoVideo &f) {
+            return f.alto == formato.alto && f.familia == formato.familia;
+        });
+        if (formato.alto > 0 && !formato.familia.isEmpty() && !repetido)
+            formatosOfrecidos << formato;
+    } else if (evento == u"ACODEC") {
+        if (!resto.isEmpty() && !codecsAudioOfrecidos.contains(resto))
+            codecsAudioOfrecidos << resto;
     } else if (evento == u"ARCHIVO") {
         archivoActual = resto;
         ui->barraArchivo->setValue(0);

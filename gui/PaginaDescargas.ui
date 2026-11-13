@@ -66,10 +66,10 @@
      <item>
       <widget class="QCheckBox" name="checkPistas">
        <property name="text">
-        <string>Elegir subtítulos y audio</string>
+        <string>Elegir calidad, audio y subtítulos</string>
        </property>
        <property name="toolTip">
-        <string>Antes de descargar busca qué subtítulos y qué pistas de audio (idiomas) ofrece el video y deja elegir cuáles incluir. Quedan dentro del archivo.</string>
+        <string>Antes de descargar busca qué calidades, códecs, subtítulos y pistas de audio (idiomas) ofrece el video y deja elegir. Todo queda dentro de un archivo MKV.</string>
        </property>
       </widget>
      </item>

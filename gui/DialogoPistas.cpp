@@ -1,11 +1,16 @@
 #include "DialogoPistas.h"
 #include "ui_DialogoPistas.h"
 
+#include <QComboBox>
 #include <QKeyEvent>
+#include <QTimer>
 #include <QLocale>
 #include <QPushButton>
 
+#include <QHash>
+
 #include <algorithm>
+#include <functional>
 
 // Dato de cada fila: el código de idioma (lo que después recibe Descargar.sh)
 constexpr int RolIdioma = Qt::UserRole;
@@ -88,14 +93,80 @@ QStringList marcados(const QListWidget *lista)
 
 } // namespace
 
-DialogoPistas::DialogoPistas(const QList<PistaAudio> &audios, const QList<Subtitulo> &subtitulos, QWidget *parent)
-    : QDialog(parent), ui(new Ui::DialogoPistas)
+DialogoPistas::DialogoPistas(const QList<PistaAudio> &audios, const QList<Subtitulo> &subtitulos,
+                             const QList<FormatoVideo> &formatos_, const QStringList &codecsAudio, QWidget *parent)
+    : QDialog(parent), ui(new Ui::DialogoPistas), formatos(formatos_)
 {
     ui->setupUi(this);
     ui->botones->button(QDialogButtonBox::Ok)->setText(tr("Descargar"));
     ui->botones->button(QDialogButtonBox::Cancel)->setText(tr("Cancelar"));
     connect(ui->botones, &QDialogButtonBox::accepted, this, &QDialog::accept);
     connect(ui->botones, &QDialogButtonBox::rejected, this, &QDialog::reject);
+
+    // ── Calidad y códecs: solo lo que ofrece el video, de mayor a menor calidad. Lo primero
+    // de cada lista es «sin preferencia» (lo de siempre: lo mejor que haya) ──
+    QList<int> altos;
+    QStringList familiasVideo;
+    for (const FormatoVideo &formato : formatos) {
+        if (!altos.contains(formato.alto))
+            altos << formato.alto;
+        if (!familiasVideo.contains(formato.familia))
+            familiasVideo << formato.familia;
+    }
+    std::sort(altos.begin(), altos.end(), std::greater<int>());
+    ui->comboCalidad->addItem(tr("La mejor"), 0);
+    for (int alto : std::as_const(altos))
+        ui->comboCalidad->addItem(alto >= 2160 ? QStringLiteral("%1p (4K)").arg(alto) : QStringLiteral("%1p").arg(alto), alto);
+    // Orden de los códecs: de más eficiente a más compatible
+    static const QStringList ordenVideo{QStringLiteral("av1"), QStringLiteral("vp9"), QStringLiteral("h265"),
+                                        QStringLiteral("h264"), QStringLiteral("vp8")};
+    static const QStringList ordenAudio{QStringLiteral("opus"), QStringLiteral("aac"), QStringLiteral("eac3"),
+                                        QStringLiteral("ac3"), QStringLiteral("flac"), QStringLiteral("vorbis"), QStringLiteral("mp3")};
+    ui->comboVcodec->addItem(tr("Cualquiera"), QString());
+    for (const QString &familia : ordenVideo) {
+        if (familiasVideo.contains(familia))
+            ui->comboVcodec->addItem(nombreCodec(familia), familia);
+    }
+    ui->comboAcodec->addItem(tr("Cualquiera"), QString());
+    for (const QString &familia : ordenAudio) {
+        if (codecsAudio.contains(familia))
+            ui->comboAcodec->addItem(nombreCodec(familia), familia);
+    }
+#ifdef Q_OS_ANDROID
+    // En Android la lista de un desplegable es una ventana aparte que no se abre bien sobre el
+    // diálogo: cada desplegable se cambia por opciones para tocar, una al lado de la otra
+    for (QComboBox *combo : {ui->comboCalidad, ui->comboVcodec, ui->comboAcodec}) {
+        auto *opciones = new QListWidget(combo->parentWidget());
+        opciones->setObjectName(combo->objectName() + QStringLiteral("Opciones"));
+        opciones->setFlow(QListView::LeftToRight);
+        opciones->setWrapping(true);
+        opciones->setResizeMode(QListView::Adjust);
+        opciones->setSpacing(4);
+        opciones->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+        opciones->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+        opciones->setSelectionMode(QAbstractItemView::SingleSelection);
+        opciones->setStyleSheet(QStringLiteral("QListWidget::item { padding: 10px 14px; border: 1px solid palette(mid); }"
+                                               "QListWidget::item:selected { background: palette(highlight); }"));
+        for (int i = 0; i < combo->count(); ++i)
+            new QListWidgetItem(combo->itemText(i), opciones);
+        opciones->setCurrentRow(combo->currentIndex());
+        connect(opciones, &QListWidget::currentRowChanged, combo, [combo](int fila) {
+            if (fila >= 0)
+                combo->setCurrentIndex(fila);
+        });
+        // Alto justo para que entren todas las opciones (sin barra para desplazar)
+        opciones->setFixedHeight(qMax(56, ((combo->count() + 2) / 3) * 58));
+        ui->layoutCalidad->replaceWidget(combo, opciones);
+        combo->hide();
+    }
+#endif
+    if (formatos.isEmpty()) {
+        ui->grupoCalidad->hide();      // el sitio no informó calidades: se baja la mejor
+    } else {
+        connect(ui->comboCalidad, &QComboBox::currentIndexChanged, this, &DialogoPistas::marcarCodecsDisponibles);
+        connect(ui->comboVcodec, &QComboBox::currentIndexChanged, this, &DialogoPistas::marcarCodecsDisponibles);
+        marcarCodecsDisponibles();
+    }
 
     // Idioma en que está el sistema: sus pistas y subtítulos van arriba en las listas
     const QLocale::Language idiomaSistema = QLocale::system().language();
@@ -185,14 +256,83 @@ void DialogoPistas::keyPressEvent(QKeyEvent *evento)
     QDialog::keyPressEvent(evento);
 }
 
-QStringList DialogoPistas::audiosElegidos() const
+int DialogoPistas::abrir()
 {
-    return marcados(ui->listaAudios);
+#ifdef Q_OS_ANDROID
+    setWindowState(Qt::WindowMaximized);   // en el celular, a pantalla completa
+    // Cuando ya están acomodadas, cada lista de opciones toma el alto justo para que se vean todas
+    QTimer::singleShot(0, this, [this] {
+        const QList<QListWidget *> listas = findChildren<QListWidget *>();
+        for (QListWidget *opciones : listas) {
+            if (!opciones->objectName().endsWith(QLatin1String("Opciones")) || opciones->count() == 0)
+                continue;
+            const QRect ultima = opciones->visualItemRect(opciones->item(opciones->count() - 1));
+            opciones->setFixedHeight(ultima.bottom() + opciones->spacing() + 2 * opciones->frameWidth() + 2);
+        }
+    });
+#endif
+    return exec();
 }
 
-QStringList DialogoPistas::subtitulosElegidos() const
+Eleccion DialogoPistas::eleccion() const
 {
-    return marcados(ui->listaSubtitulos);
+    Eleccion e;
+    e.audios = marcados(ui->listaAudios);
+    e.subtitulos = marcados(ui->listaSubtitulos);
+    e.calidad = ui->comboCalidad->currentData().toInt();
+    e.vcodec = ui->comboVcodec->currentData().toString();
+    e.acodec = ui->comboAcodec->currentData().toString();
+    return e;
+}
+
+QString DialogoPistas::nombreCodec(const QString &familia)
+{
+    static const QHash<QString, QString> nombres{
+        {QStringLiteral("av1"), QStringLiteral("AV1")},
+        {QStringLiteral("vp9"), QStringLiteral("VP9")},
+        {QStringLiteral("h264"), QStringLiteral("H.264 (AVC)")},
+        {QStringLiteral("h265"), QStringLiteral("H.265 (HEVC)")},
+        {QStringLiteral("vp8"), QStringLiteral("VP8")},
+        {QStringLiteral("opus"), QStringLiteral("Opus")},
+        {QStringLiteral("aac"), QStringLiteral("AAC")},
+        {QStringLiteral("vorbis"), QStringLiteral("Vorbis")},
+        {QStringLiteral("mp3"), QStringLiteral("MP3")},
+        {QStringLiteral("ac3"), QStringLiteral("AC-3 (Dolby Digital)")},
+        {QStringLiteral("eac3"), QStringLiteral("E-AC-3 (Dolby Digital Plus)")},
+        {QStringLiteral("flac"), QStringLiteral("FLAC")},
+    };
+    return nombres.value(familia, familia);
+}
+
+// Con una calidad elegida, los códecs de video que no existen en ella se marcan: si se
+// eligen igual, se baja ese códec en la calidad más cercana por debajo (o la calidad con
+// otro códec), nunca falla. Debajo se explica qué se va a bajar.
+void DialogoPistas::marcarCodecsDisponibles()
+{
+    const int alto = ui->comboCalidad->currentData().toInt();
+    QStringList enEseAlto;
+    for (const FormatoVideo &formato : std::as_const(formatos)) {
+        if (alto == 0 || formato.alto == alto)
+            enEseAlto << formato.familia;
+    }
+    for (int i = 1; i < ui->comboVcodec->count(); ++i) {
+        const QString familia = ui->comboVcodec->itemData(i).toString();
+        ui->comboVcodec->setItemText(i, enEseAlto.contains(familia) || alto == 0
+                                            ? nombreCodec(familia)
+                                            : tr("%1 — no está en %2p").arg(nombreCodec(familia)).arg(alto));
+    }
+#ifdef Q_OS_ANDROID
+    if (auto *opciones = findChild<QListWidget *>(QStringLiteral("comboVcodecOpciones"))) {
+        for (int i = 0; i < opciones->count() && i < ui->comboVcodec->count(); ++i)
+            opciones->item(i)->setText(ui->comboVcodec->itemText(i));
+    }
+#endif
+    const QString vcodec = ui->comboVcodec->currentData().toString();
+    if (!vcodec.isEmpty() && alto != 0 && !enEseAlto.contains(vcodec))
+        ui->etiquetaCalidad->setText(tr("Se baja %1 en la mejor calidad que tenga por debajo de %2p.")
+                                         .arg(nombreCodec(vcodec)).arg(alto));
+    else
+        ui->etiquetaCalidad->setText(tr("El archivo queda en MKV. Si un video no tiene lo elegido, se baja lo más parecido."));
 }
 
 // Muestra las filas que coinciden con el filtro. Las traducciones automáticas a otros

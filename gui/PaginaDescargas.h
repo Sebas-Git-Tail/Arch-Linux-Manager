@@ -54,7 +54,7 @@ private:
     QString destino() const;
     void buscarPistas();
     void terminoPistas(int codigo, QProcess::ExitStatus estado);
-    void iniciarDescarga(const QStringList &audios, const QStringList &subtitulos);
+    void iniciarDescarga(const Eleccion &eleccion);
     void terminar(const QString &estado);
 
     Ui::PaginaDescargas *ui;
@@ -76,4 +76,6 @@ private:
     // Lo que informó --pistas, por idioma (si varias URLs ofrecen el mismo, queda una vez)
     QHash<QString, PistaAudio> audiosOfrecidos;
     QHash<QString, Subtitulo> subtitulosOfrecidos;
+    QList<FormatoVideo> formatosOfrecidos;      // eventos VIDEO (sin repetir)
+    QStringList codecsAudioOfrecidos;           // eventos ACODEC (sin repetir)
 };
