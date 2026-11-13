@@ -104,6 +104,25 @@
       </spacer>
      </item>
      <item>
+      <widget class="QToolButton" name="botonEquipo">
+       <property name="text">
+        <string>Este equipo…</string>
+       </property>
+       <property name="icon">
+        <iconset theme="computer"/>
+       </property>
+       <property name="toolButtonStyle">
+        <enum>Qt::ToolButtonStyle::ToolButtonTextBesideIcon</enum>
+       </property>
+       <property name="popupMode">
+        <enum>QToolButton::ToolButtonPopupMode::InstantPopup</enum>
+       </property>
+       <property name="toolTip">
+        <string>Elegir qué computadora es esta (si no, se adivina por la placa de red)</string>
+       </property>
+      </widget>
+     </item>
+     <item>
       <widget class="QPushButton" name="botonRefrescar">
        <property name="text">
         <string>Actualizar estado</string>

@@ -8,6 +8,7 @@
 #include "Acciones.h"
 
 #include <QMap>
+#include <QStringList>
 #include <QProcess>
 #include <QProcessEnvironment>
 #include <QWidget>
@@ -41,6 +42,8 @@ private:
     void mostrarPagina(QWidget *pagina, const QString &titulo, bool conVolver);
     void avisar(const QString &texto);
     void mostrarEstado();
+    void armarMenuEquipo();
+    void elegirEquipo(const QString &equipo);
     QProcessEnvironment entornoScripts() const;
 
     Ui::VentanaPrincipal *ui;

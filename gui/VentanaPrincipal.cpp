@@ -13,7 +13,9 @@
 #include <QCloseEvent>
 #include <QCommandLinkButton>
 #include <QDir>
+#include <QActionGroup>
 #include <QGridLayout>
+#include <QMenu>
 #include <QMessageBox>
 #include <QScrollArea>
 #include <QTimer>
@@ -79,6 +81,7 @@ VentanaPrincipal::VentanaPrincipal(const QString &base, QWidget *parent)
     connect(ui->botonVolver, &QPushButton::clicked, this, &VentanaPrincipal::volver);
     connect(ui->botonRefrescar, &QPushButton::clicked, this, [this] { comprobarEntorno(true); });
     connect(&procesoEntorno, &QProcess::finished, this, &VentanaPrincipal::terminoEntorno);
+    armarMenuEquipo();
 
     comprobarEntorno();
 }
@@ -151,6 +154,8 @@ void VentanaPrincipal::terminoEntorno(int codigo, QProcess::ExitStatus estado)
             nuevo.restauracion = partes.value(1) == u"SI";
         else if (evento == u"NOTIFICACIONES")
             nuevo.notificaciones = partes.value(1) == u"SI";
+        else if (evento == u"MAQUINA_ORIGEN")
+            nuevo.maquinaElegida = partes.value(1) == u"manual";
     }
     entorno = nuevo;
 
@@ -158,18 +163,71 @@ void VentanaPrincipal::terminoEntorno(int codigo, QProcess::ExitStatus estado)
     mostrarEstado();
 }
 
+namespace {
+// Equipos que entiende Common/Equipo.sh, en el orden del menú «Este equipo…»
+const QList<QPair<QString, QString>> &equipos()
+{
+    static const QList<QPair<QString, QString>> lista{
+        {QStringLiteral("pc"), QObject::tr("PC de Sebastián")},
+        {QStringLiteral("instituto"), QObject::tr("PC del instituto")},
+        {QStringLiteral("mama"), QObject::tr("PC de mamá")},
+        {QStringLiteral("krocante"), QObject::tr("PC de Krocante")},
+        {QStringLiteral("otra"), QObject::tr("Otra computadora")},
+    };
+    return lista;
+}
+}
+
 void VentanaPrincipal::mostrarEstado()
 {
-    static const QMap<QString, QString> nombres{
-        {QStringLiteral("pc"), tr("PC de Sebastián")},
-        {QStringLiteral("instituto"), tr("PC del instituto")},
-        {QStringLiteral("mama"), tr("PC de mamá")},
-        {QStringLiteral("krocante"), tr("PC de Krocante")},
-        {QStringLiteral("otra"), tr("Otra computadora")},
-    };
-    ui->etiquetaEstado->setText(tr("%1 · Servidor: %2")
-                                    .arg(nombres.value(entorno.maquina, entorno.maquina),
+    QString nombre = entorno.maquina;
+    for (const auto &[id, texto] : equipos()) {
+        if (id == entorno.maquina)
+            nombre = texto;
+    }
+    ui->etiquetaEstado->setText(tr("%1%2 · Servidor: %3")
+                                    .arg(nombre, entorno.maquinaElegida ? QString() : tr(" (por la placa de red)"),
                                          entorno.servidor ? tr("activo ✓") : tr("sin conexión ✗")));
+
+    // Marca en el menú lo que está elegido
+    if (QMenu *menu = ui->botonEquipo->menu()) {
+        const QString marcado = entorno.maquinaElegida ? entorno.maquina : QStringLiteral("auto");
+        for (QAction *accion : menu->actions())
+            accion->setChecked(accion->data().toString() == marcado);
+    }
+}
+
+// Menú «Este equipo…»: elegir a mano qué computadora es (lo guarda Entorno.sh --equipo en
+// ~/.config/Manager/Equipo.conf). «Automático» vuelve a adivinarlo por la MAC.
+void VentanaPrincipal::armarMenuEquipo()
+{
+    auto *menu = new QMenu(ui->botonEquipo);
+    auto *grupo = new QActionGroup(menu);
+    const auto agregar = [&](const QString &id, const QString &texto) {
+        QAction *accion = menu->addAction(texto);
+        accion->setData(id);
+        accion->setCheckable(true);
+        grupo->addAction(accion);
+        connect(accion, &QAction::triggered, this, [this, id] { elegirEquipo(id); });
+    };
+    agregar(QStringLiteral("auto"), tr("Automático (por la placa de red)"));
+    menu->addSeparator();
+    for (const auto &[id, texto] : equipos())
+        agregar(id, texto);
+    ui->botonEquipo->setMenu(menu);
+}
+
+void VentanaPrincipal::elegirEquipo(const QString &equipo)
+{
+    QProcess guardar;
+    guardar.setProcessEnvironment(entornoScripts());
+    guardar.start(QStringLiteral("bash"), {QDir(base).filePath(QStringLiteral("Logica/Entorno.sh")),
+                                           QStringLiteral("--equipo"), equipo});
+    if (!guardar.waitForFinished(5000) || guardar.exitCode() != 0) {
+        QMessageBox::warning(this, windowTitle(), tr("No se pudo guardar el equipo."));
+        return;
+    }
+    comprobarEntorno();    // las secciones dependen del equipo
 }
 
 // Mensaje temporal en la barra de abajo (vuelve al estado a los 4 segundos)

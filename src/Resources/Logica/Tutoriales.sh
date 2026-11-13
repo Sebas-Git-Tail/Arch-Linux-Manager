@@ -18,7 +18,7 @@ error() { emitir "ERROR $1"; exit "${2:-2}"; }
 
 COMMON="${COMMON:-$(dirname "$(realpath "$0")")/../Common}"
 source "$COMMON/Servidor.sh"   # direcciones del servidor web y responde()
-source "$COMMON/MAC.sh"        # es_maquina_mamá
+source "$COMMON/Equipo.sh"     # es_maquina_mamá
 
 # Servidor web: por la red de casa si responde, si no por Tailscale
 # (se prueba el puerto web: un ping a 192.168.100.14 puede contestar otro aparato en otra red)

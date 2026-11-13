@@ -1,5 +1,6 @@
-# Se incluye con source. Identifica cada computadora por la MAC de su placa de red y define
-# funciones es_maquina_... que devuelven verdadero o falso.
+# shellcheck shell=bash
+# Se incluye con source (lo incluye Common/Equipo.sh). Reconoce cada computadora por la MAC de su
+# placa de red. Solo se usa si no se eligió el equipo a mano (ver Equipo.sh).
 # MAC PC
 MAC_PC="58:11:22:a9:df:de"
 
@@ -30,21 +31,4 @@ tiene_mac() {
     local macs
     macs=$(detectar_mac)
     grep -qix -- "$1" <<< "$macs"
-}
-
-# Cada función busca la MAC de una computadora en la lista
-es_maquina_pc() {
-    tiene_mac "$MAC_PC"
-}
-
-es_maquina_mamá() {
-    tiene_mac "$MAC_MAMA"
-}
-
-es_maquina_krocante() {
-    tiene_mac "$MAC_KROCANTE"
-}
-
-es_maquina_instituto() {
-    tiene_mac "$MAC_INSTITUTO"
 }
