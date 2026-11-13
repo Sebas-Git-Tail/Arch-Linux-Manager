@@ -1,16 +1,9 @@
 #!/bin/bash
 # Lado receptor de Logica/Notificacion.sh (corre en la PC de Sebastian).
 # No se usa desde la ventana: lo ejecuta por SSH Logica/Notificacion.sh desde la PC de la tía,
-# entrando con usuario y contraseña (guardada ofuscada en su paquete).
-#
-# Para que esa contraseña no sirva para nada más que esto, en la PC que recibe conviene
-# agregar al final de /etc/ssh/sshd_config (con la IP de Tailscale de la PC de la tía):
-#   Match User sebastian Address <IP-de-la-tía>
-#       ForceCommand /usr/share/Arch-Linux-Manager/Resources/General/Mostrar-Notificacion.sh
-#       PermitTTY no
-#       AllowTcpForwarding no
-#       X11Forwarding no
-# y reiniciar sshd.
+# entrando con la clave Common/Notificaciones.key. En esta PC la clave está en
+# ~/.ssh/authorized_keys con «restrict,from="<IPs de Krocante>",command="…/Mostrar-Notificacion.sh"»
+# (lo instala ~/Repo/Scripts/generar-clave-notificaciones.sh): con ella no se puede hacer otra cosa.
 
 # Lee el mensaje de la entrada estándar (máximo 1000 caracteres) y lo muestra en la
 # sesión gráfica. El texto se pasa por la entrada estándar, nunca se interpreta como código.

@@ -2,9 +2,10 @@
 # Lógica sin interfaz de Notificaciones (antes: General/Notificaciones.sh): manda un
 # mensaje a la PC de Sebastian, que lo muestra con Mostrar-Notificacion.sh.
 #
-# Entra con usuario y contraseña, sin que haga falta escribirla: viene ofuscada en
-# Common/Notificaciones.conf (lo arma ~/Repo/Scripts/guardar-clave-notificaciones.sh y NO se
-# sube a GitHub). Ofuscada no es cifrada: solo evita que se lea a simple vista.
+# Entra con una clave SSH que viene en el paquete (Common/Notificaciones.key, la arma
+# ~/Repo/Scripts/generar-clave-notificaciones.sh y NO se sube a GitHub). En la PC de Sebastián esa
+# clave está restringida (restrict, from=IP de Krocante, command=Mostrar-Notificacion.sh): solo
+# sirve para mostrar una notificación. Antes viajaba la contraseña de la cuenta, ofuscada.
 # El mensaje viaja por la entrada estándar, nunca como parte de un comando.
 #
 # Uso: Notificacion.sh < mensaje
@@ -19,31 +20,22 @@ error() { emitir "ERROR $1"; exit "${2:-1}"; }
 
 COMMON="${COMMON:-$(dirname "$(realpath "$0")")/../Common}"
 CONF="$COMMON/Notificaciones.conf"
-[[ -r "$CONF" ]] || error "Falta la configuración de notificaciones ($CONF)." 2
-source "$CONF"     # NOTIF_DESTINO (usuario@ip), NOTIF_COMANDO y NOTIF_CLAVE (ofuscada)
-
-# Deshace la ofuscación (XOR con una frase fija + base64)
-desofuscar() {
-    python3 -c 'import base64,sys
-k=b"Arch-Linux-Manager/notificaciones"
-d=base64.b64decode(sys.argv[1])
-sys.stdout.write(bytes(c ^ k[i % len(k)] for i, c in enumerate(d)).decode())' "$1"
-}
+CLAVE="$COMMON/Notificaciones.key"
+[[ -r "$CONF" && -r "$CLAVE" ]] || error "Falta la configuración de notificaciones ($CONF y Notificaciones.key)." 2
+source "$CONF"                  # NOTIF_DESTINO (usuario@ip)
+source "$COMMON/Servidor.sh"    # SSH_HUELLAS (huellas fijas de Common/known_hosts)
 
 mensaje=$(head -c 1000)
 [[ -n "${mensaje//[[:space:]]/}" ]] || error "No se escribió ningún mensaje." 2
 
-SSHPASS=$(desofuscar "$NOTIF_CLAVE") || error "La contraseña guardada está dañada." 2
-export SSHPASS
-
-printf '%s' "$mensaje" | sshpass -e ssh \
-        -o PubkeyAuthentication=no -o PreferredAuthentications=password \
-        -o ConnectTimeout=5 -o StrictHostKeyChecking=accept-new \
-        "$NOTIF_DESTINO" "$NOTIF_COMANDO"
+# El comando que se ejecuta en la PC lo decide la PC (command= en authorized_keys), no este script.
+# IdentitiesOnly: solo esta clave, no las del usuario. BatchMode: nunca pide contraseña.
+# shellcheck disable=SC2086
+printf '%s' "$mensaje" | ssh $SSH_HUELLAS -o HostKeyAlias=pc-sebastian \
+        -i "$CLAVE" -o IdentitiesOnly=yes -o BatchMode=yes -o ConnectTimeout=5 \
+        "$NOTIF_DESTINO" 2>/dev/null
 codigo=$?
-unset SSHPASS
 case $codigo in
     0) emitir "LISTO Notificación enviada." ;;
-    5) error "La contraseña de notificaciones ya no es la correcta: hay que volver a guardarla." ;;
-    *) error "No se pudo enviar la notificación. ¿La PC de Sebastian está encendida?" ;;
+    *) error "No se pudo enviar la notificación. ¿La PC de Sebastián está encendida?" ;;
 esac
