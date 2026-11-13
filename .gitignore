@@ -38,3 +38,6 @@ log.txt
 
 # Contraseña ofuscada de las notificaciones (va en el paquete, no en GitHub)
 /src/Resources/Common/Notificaciones.conf
+
+# Lo compilado (APK, paquetes, .tar para Windows)
+/Salida/
