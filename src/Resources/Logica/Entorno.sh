@@ -10,6 +10,7 @@
 # Eventos (stdout, uno por línea):
 #   MAQUINA pc|instituto|mama|krocante|otra
 #   MAQUINA_ORIGEN manual|mac       elegida en la ventana (Equipo.conf) o adivinada por la MAC
+#   ELEGIR_EQUIPO SI|NO             se muestra el botón «Este equipo…» (solo en las PC de Sebastián)
 #   SERVIDOR SI|NO
 #   PROGRAMA <nombre> SI|NO        (prismlauncher, steam, waydroid, adb)
 #   RESTAURACION SI|NO             hay servidor y esta PC todavía no hizo ningún respaldo
@@ -28,7 +29,11 @@ if [[ "${1:-}" == --equipo ]]; then
         emitir "LISTO Equipo guardado."
         exit 0
     fi
-    emitir "ERROR Equipo desconocido: ${2:-}"
+    if ! puede_elegir_equipo; then
+        emitir "ERROR Elegir el equipo solo se puede en las computadoras de Sebastián."
+    else
+        emitir "ERROR Equipo desconocido: ${2:-}"
+    fi
     exit 2
 fi
 
@@ -39,6 +44,11 @@ if equipo_elegido >/dev/null; then
     emitir "MAQUINA_ORIGEN manual"
 else
     emitir "MAQUINA_ORIGEN mac"
+fi
+if puede_elegir_equipo; then
+    emitir "ELEGIR_EQUIPO SI"
+else
+    emitir "ELEGIR_EQUIPO NO"
 fi
 
 # Servidor: si el estado se guardó hace menos de 2 minutos se reutiliza (así abrir la

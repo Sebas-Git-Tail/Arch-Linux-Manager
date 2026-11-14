@@ -32,6 +32,9 @@ if command -v shellcheck &>/dev/null; then
 fi
 
 echo "Equipo.sh"
+export MANAGER_MAC_PRUEBA="58:11:22:a9:df:de"   # la PC de Sebastián (ver Common/MAC.sh)
+elegir() { bash "$LOGICA/Entorno.sh" 2>/dev/null | sed -n 's/^ELEGIR_EQUIPO //p'; }
+igual "en la PC de Sebastián se muestra «Este equipo…»" "$(elegir)" "SI"
 equipo() { bash -c 'source "$COMMON/Equipo.sh"; equipo_actual'; }
 origen() { bash "$LOGICA/Entorno.sh" 2>/dev/null | sed -n 's/^MAQUINA_ORIGEN //p'; }
 igual "sin Equipo.conf se adivina por la MAC" "$(origen)" "mac"
@@ -47,6 +50,17 @@ echo "mamá rota" > "$HOME/.config/Manager/Equipo.conf"
 [[ "$(equipo)" =~ ^(pc|instituto|mama|krocante|otra)$ ]] && ok "un Equipo.conf inválido vuelve a la MAC" || mal "Equipo.conf inválido"
 bash "$LOGICA/Entorno.sh" --equipo auto >/dev/null
 [[ ! -e "$HOME/.config/Manager/Equipo.conf" ]] && ok "--equipo auto borra la elección" || mal "--equipo auto"
+bash "$LOGICA/Entorno.sh" --equipo krocante >/dev/null
+MANAGER_MAC_PRUEBA="18:c0:4d:a2:fe:e0"   # la PC de mamá, con un Equipo.conf viejo
+igual "en otra PC no se muestra «Este equipo…»" "$(elegir)" "NO"
+igual "en otra PC se ignora Equipo.conf" "$(equipo)" "mama"
+igual "en otra PC el origen es la MAC" "$(origen)" "mac"
+if bash "$LOGICA/Entorno.sh" --equipo pc >/dev/null; then mal "--equipo funciona en otra PC"; else ok "--equipo se rechaza en otra PC"; fi
+igual "en otra PC --equipo no toca Equipo.conf" "$(cat "$HOME/.config/Manager/Equipo.conf")" "krocante"
+MANAGER_MAC_PRUEBA="aa:bb:cc:dd:ee:ff"
+igual "en una PC desconocida tampoco" "$(elegir)" "NO"
+rm -f "$HOME/.config/Manager/Equipo.conf"
+unset MANAGER_MAC_PRUEBA
 
 echo "Servidor.sh y servidor.json"
 cache="$XDG_CACHE_HOME/Arch-Linux-Manager/servidor.json"

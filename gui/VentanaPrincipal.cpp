@@ -82,6 +82,7 @@ VentanaPrincipal::VentanaPrincipal(const QString &base, QWidget *parent)
     connect(ui->botonRefrescar, &QPushButton::clicked, this, [this] { comprobarEntorno(true); });
     connect(&procesoEntorno, &QProcess::finished, this, &VentanaPrincipal::terminoEntorno);
     armarMenuEquipo();
+    ui->botonEquipo->hide();    // se muestra si Entorno.sh dice ELEGIR_EQUIPO SI
 
     comprobarEntorno();
 }
@@ -156,6 +157,8 @@ void VentanaPrincipal::terminoEntorno(int codigo, QProcess::ExitStatus estado)
             nuevo.notificaciones = partes.value(1) == u"SI";
         else if (evento == u"MAQUINA_ORIGEN")
             nuevo.maquinaElegida = partes.value(1) == u"manual";
+        else if (evento == u"ELEGIR_EQUIPO")
+            nuevo.puedeElegirEquipo = partes.value(1) == u"SI";
     }
     entorno = nuevo;
 
@@ -188,6 +191,9 @@ void VentanaPrincipal::mostrarEstado()
     ui->etiquetaEstado->setText(tr("%1%2 · Servidor: %3")
                                     .arg(nombre, entorno.maquinaElegida ? QString() : tr(" (por la placa de red)"),
                                          entorno.servidor ? tr("activo ✓") : tr("sin conexión ✗")));
+
+    // «Este equipo…» es para depurar: solo en las computadoras de Sebastián
+    ui->botonEquipo->setVisible(entorno.puedeElegirEquipo);
 
     // Marca en el menú lo que está elegido
     if (QMenu *menu = ui->botonEquipo->menu()) {

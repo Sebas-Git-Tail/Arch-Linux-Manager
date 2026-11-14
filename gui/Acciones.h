@@ -20,6 +20,7 @@ struct Entorno
     bool restauracion = false;
     bool notificaciones = false;
     bool maquinaElegida = false;                 // elegida a mano (Equipo.conf) y no por la MAC
+    bool puedeElegirEquipo = false;              // botón «Este equipo…» (solo PC de Sebastián, por la MAC)
 
     bool tiene(const QString &programa) const { return programas.contains(programa); }
     bool esSebastian() const { return maquina == u"pc" || maquina == u"instituto"; }

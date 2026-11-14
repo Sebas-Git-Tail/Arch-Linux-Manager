@@ -17,6 +17,11 @@ MAC_INSTITUTO="5c:ba:ef:4c:0c:77"
 # También la MAC permanente (permaddr): si el wifi usa una MAC aleatoria por red,
 # la dirección actual cambia y la computadora no se reconocería.
 detectar_mac() {
+    # Solo para tests/correr.sh: simula las MAC de otra computadora
+    if [[ -n "${MANAGER_MAC_PRUEBA:-}" ]]; then
+        printf '%s\n' "$MANAGER_MAC_PRUEBA"
+        return
+    fi
     for iface in /sys/class/net/*/address; do
         cat "$iface"
     done

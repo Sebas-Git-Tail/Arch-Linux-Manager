@@ -5,15 +5,23 @@
 # que se elige desde la ventana (botón «Este equipo…» abajo). Así, cambiar de placa de red o
 # instalar en una PC nueva no obliga a publicar una versión nueva del paquete.
 # Si ese archivo no existe, se adivina como antes, por la MAC de la placa de red (Common/MAC.sh).
+# Elegir el equipo a mano es para depurar y solo vale en las computadoras de Sebastián (PC e
+# instituto, reconocidas por la MAC real): en las demás se ignora Equipo.conf y no se puede guardar.
 
 EQUIPOS_VALIDOS=(pc instituto mama krocante otra)
 EQUIPO_CONF="$HOME/.config/Manager/Equipo.conf"
 
 source "${COMMON:-$(dirname "${BASH_SOURCE[0]}")}/MAC.sh"   # MAC_*, tiene_mac
 
-# Imprime el equipo elegido a mano, o nada si no hay uno válido
+# Verdadero si la placa de red es de una computadora de Sebastián (no mira Equipo.conf)
+puede_elegir_equipo() {
+    tiene_mac "$MAC_PC" || tiene_mac "$MAC_INSTITUTO"
+}
+
+# Imprime el equipo elegido a mano, o nada si no hay uno válido (o no se puede elegir)
 equipo_elegido() {
     local e=""
+    puede_elegir_equipo || return 1
     [[ -s "$EQUIPO_CONF" ]] && IFS= read -r e < "$EQUIPO_CONF"
     e="${e//[[:space:]]/}"
     for valido in "${EQUIPOS_VALIDOS[@]}"; do
@@ -42,6 +50,7 @@ equipo_actual() {
 
 # Guarda el equipo elegido a mano («auto» borra la elección y vuelve a usar la MAC)
 guardar_equipo() {
+    puede_elegir_equipo || return 1
     if [[ "$1" == auto ]]; then
         rm -f "$EQUIPO_CONF"
         return 0
