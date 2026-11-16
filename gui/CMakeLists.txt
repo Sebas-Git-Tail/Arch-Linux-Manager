@@ -13,11 +13,16 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTOUIC ON)
 
-find_package(Qt6 REQUIRED COMPONENTS Widgets)
+# Network tiene que buscarse antes de comun
+find_package(Qt6 REQUIRED COMPONENTS Widgets Network)
+
+# Versión del programa: la pasa el PKGBUILD (-DVERSION_PROGRAMA=$pkgver-$pkgrel); la usa el actualizador
+set(VERSION_PROGRAMA "0.0.0" CACHE STRING "Versión del programa (pkgver-pkgrel)")
 
 # Código compartido con Android-Manager y Windows-Manager (repo comun-qt, traído con git subtree a
 # ../comun): el diálogo de pistas de audio, subtítulos y calidad de Descargar Vídeos.
 set(COMUN_DESCARGAS ON)
+set(COMUN_APPS_WIDGETS ON)   # actualizarse sola e instalar las otras apps (comun/apps)
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../comun ${CMAKE_CURRENT_BINARY_DIR}/comun)
 
 add_executable(Arch-Linux-Manager-Qt
@@ -33,6 +38,7 @@ add_executable(Arch-Linux-Manager-Qt
     PaginaNotificacion.cpp PaginaNotificacion.h PaginaNotificacion.ui
     ProcesoLogica.cpp ProcesoLogica.h
 )
-target_link_libraries(Arch-Linux-Manager-Qt PRIVATE Qt6::Widgets comun_descargas)
+target_link_libraries(Arch-Linux-Manager-Qt PRIVATE Qt6::Widgets comun_descargas comun_apps_widgets)
+target_compile_definitions(Arch-Linux-Manager-Qt PRIVATE VERSION_PROGRAMA="${VERSION_PROGRAMA}")
 
 install(TARGETS Arch-Linux-Manager-Qt RUNTIME DESTINATION bin)

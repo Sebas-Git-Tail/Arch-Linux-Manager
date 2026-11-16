@@ -1,4 +1,5 @@
 #include "VentanaPrincipal.h"
+#include "PanelApps.h"
 #include "ui_VentanaPrincipal.h"
 
 #include "PaginaDescargas.h"
@@ -73,6 +74,8 @@ VentanaPrincipal::VentanaPrincipal(const QString &base, QWidget *parent)
 
     herramientas.insert(QStringLiteral("tutoriales"), new PaginaTutoriales(logica, this));
     herramientas.insert(QStringLiteral("notificaciones"), new PaginaNotificacion(logica, this));
+    // Actualizar el Manager (paquete del repositorio de la casa) e instalar las otras apps (comun/apps)
+    herramientas.insert(QStringLiteral("apps"), new apps::PanelApps(QStringLiteral("Arch-Linux-Manager"), this));
 
     for (QWidget *pagina : std::as_const(herramientas))
         ui->paginas->addWidget(pagina);
@@ -85,6 +88,8 @@ VentanaPrincipal::VentanaPrincipal(const QString &base, QWidget *parent)
     ui->botonEquipo->hide();    // se muestra si Entorno.sh dice ELEGIR_EQUIPO SI
 
     comprobarEntorno();
+    // Una vez por día: si hay una versión nueva del Manager, pregunta y la instala (pkexec pacman -U)
+    QTimer::singleShot(3000, this, [this] { apps::avisarActualizaciones(this, QStringLiteral("Arch-Linux-Manager")); });
 }
 
 VentanaPrincipal::~VentanaPrincipal()

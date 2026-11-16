@@ -21,6 +21,7 @@ int main(int argc, char *argv[])
 {
     QApplication app(argc, argv);
     QApplication::setApplicationName(QStringLiteral("Arch-Linux-Manager"));
+    QApplication::setApplicationVersion(QStringLiteral(VERSION_PROGRAMA));
     // Mismo nombre que el .desktop, así KDE le pone el ícono y el atajo del Manager
     QApplication::setDesktopFileName(QStringLiteral("Arch-Linux-Manager"));
 
