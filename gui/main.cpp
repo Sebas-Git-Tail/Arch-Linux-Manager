@@ -8,6 +8,7 @@
 //   Arch-Linux-Manager-Qt --base ~/Escritorio/Manager/src/Resources
 
 #include "VentanaPrincipal.h"
+#include "Traducciones.h"
 
 #include <QApplication>
 #include <QCommandLineParser>
@@ -20,6 +21,7 @@
 int main(int argc, char *argv[])
 {
     QApplication app(argc, argv);
+    apps::cargarTraduccionesQt();   // botones estándar en español (comun/apps; Android y Windows no traen la traducción)
     QApplication::setApplicationName(QStringLiteral("Arch-Linux-Manager"));
     QApplication::setApplicationVersion(QStringLiteral(VERSION_PROGRAMA));
     // Mismo nombre que el .desktop, así KDE le pone el ícono y el atajo del Manager
