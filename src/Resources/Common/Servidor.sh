@@ -24,6 +24,9 @@ SERVIDOR_WEB_LOCAL="http://192.168.100.14:8080"
 SERVIDOR_WEB_TAILSCALE="https://archlinux.tail0dedb3.ts.net"
 SERVIDOR_HOST_TAILSCALE="archlinux.tail0dedb3.ts.net"
 
+# Servidor de Minecraft de la casa (PC principal): al que entra Prism Launcher
+SERVIDOR_MINECRAFT="192.168.100.7"
+
 SERVIDOR_CONFIG_URL="${SERVIDOR_CONFIG_URL:-https://bodrio.seb-dev.fyi/recursos/servidor.json}"
 SERVIDOR_CONFIG_CACHE="${XDG_CACHE_HOME:-$HOME/.cache}/Arch-Linux-Manager/servidor.json"
 
@@ -71,6 +74,7 @@ campos = {
     "web_local": ("SERVIDOR_WEB_LOCAL", url),
     "web_tailscale": ("SERVIDOR_WEB_TAILSCALE", url),
     "host_tailscale": ("SERVIDOR_HOST_TAILSCALE", host),
+    "ip_minecraft": ("SERVIDOR_MINECRAFT", ip),
 }
 for clave, (variable, formato) in campos.items():
     valor = datos.get(clave)

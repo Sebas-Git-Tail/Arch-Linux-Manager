@@ -25,9 +25,10 @@ emitir() { printf '%s\n' "$*"; }
 error() { emitir "ERROR $1"; exit "${2:-1}"; }
 
 source "$(dirname "$(realpath "$0")")/Minecraft-comun.sh"
+COMMON="${COMMON:-$(dirname "$(realpath "$0")")/../Common}"
+source "$COMMON/Servidor.sh"   # SERVIDOR_MINECRAFT (de servidor.json, campo ip_minecraft)
 
 PRISM_DIR="$HOME/.local/share/PrismLauncher/instances"
-SERVIDOR_MINECRAFT="192.168.100.7"
 # Instancias de Prism que se abren sin conectarse a ningún servidor
 declare -A SIN_SERVIDOR=(
     ["SevTech- Ages"]=1

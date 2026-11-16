@@ -69,20 +69,23 @@ valor() { bash -c "source \"\$COMMON/Servidor.sh\"; printf '%s' \"\$$1\""; }
 igual "sin copia guardada quedan los de fábrica" "$(valor SERVIDOR_IP_LOCAL)" "192.168.100.14"
 cat > "$cache" <<'EOF'
 {"version": 1, "ip_local": "10.0.0.5", "ip_tailscale": "100.1.2.3", "usuario": "otro",
- "web_tailscale": "https://ejemplo.ts.net", "respaldos": "/srv/respaldos", "desconocido": "x"}
+ "web_tailscale": "https://ejemplo.ts.net", "respaldos": "/srv/respaldos", "desconocido": "x",
+ "ip_minecraft": "10.0.0.7"}
 EOF
 igual "servidor.json cambia la IP de casa" "$(valor SERVIDOR_IP_LOCAL)" "10.0.0.5"
 igual "servidor.json cambia la IP de Tailscale" "$(valor SERVIDOR_IP_TAILSCALE)" "100.1.2.3"
 igual "servidor.json cambia el usuario" "$(valor SERVIDOR_USUARIO)" "otro"
 igual "servidor.json cambia la carpeta" "$(valor SERVIDOR_RESPALDOS)" "/srv/respaldos"
+igual "servidor.json cambia el servidor de Minecraft" "$(valor SERVIDOR_MINECRAFT)" "10.0.0.7"
 cat > "$cache" <<'EOF'
 {"version": 1, "ip_local": "1.2.3.4; rm -rf ~", "usuario": "$(whoami)", "respaldos": "../../etc",
- "web_local": "javascript:alert(1)"}
+ "web_local": "javascript:alert(1)", "ip_minecraft": "1.2.3.4 -o x"}
 EOF
 igual "rechaza una IP con comandos" "$(valor SERVIDOR_IP_LOCAL)" "192.168.100.14"
 igual "rechaza un usuario raro" "$(valor SERVIDOR_USUARIO)" "sebastian"
 igual "rechaza una ruta relativa" "$(valor SERVIDOR_RESPALDOS)" "/home/sebastian/Respaldos"
 igual "rechaza una URL rara" "$(valor SERVIDOR_WEB_LOCAL)" "http://192.168.100.14:8080"
+igual "rechaza una IP de Minecraft rara" "$(valor SERVIDOR_MINECRAFT)" "192.168.100.7"
 echo '{"version": 2, "ip_local": "10.9.9.9"}' > "$cache"
 igual "ignora otra versión del formato" "$(valor SERVIDOR_IP_LOCAL)" "192.168.100.14"
 echo 'esto no es json' > "$cache"
