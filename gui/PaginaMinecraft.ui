@@ -6,8 +6,8 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>680</width>
-    <height>720</height>
+    <width>760</width>
+    <height>820</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -17,11 +17,46 @@
    <item>
     <widget class="QGroupBox" name="grupoServidores">
      <property name="title">
-      <string>Servidores Paper (marcá los que van a recibir un plugin)</string>
+      <string>Servidores (marcá los que van a recibir Paper nuevo o un plugin)</string>
      </property>
      <layout class="QVBoxLayout" name="layoutServidores">
       <item>
-       <widget class="QListWidget" name="listaServidores"/>
+       <widget class="QTreeWidget" name="arbolServidores">
+        <property name="rootIsDecorated">
+         <bool>false</bool>
+        </property>
+        <property name="uniformRowHeights">
+         <bool>true</bool>
+        </property>
+        <property name="alternatingRowColors">
+         <bool>true</bool>
+        </property>
+        <column>
+         <property name="text">
+          <string>Servidor</string>
+         </property>
+        </column>
+        <column>
+         <property name="text">
+          <string>Versión</string>
+         </property>
+        </column>
+        <column>
+         <property name="text">
+          <string>Mundo</string>
+         </property>
+        </column>
+        <column>
+         <property name="text">
+          <string>Último uso</string>
+         </property>
+        </column>
+        <column>
+         <property name="text">
+          <string>RAM</string>
+         </property>
+        </column>
+       </widget>
       </item>
       <item>
        <layout class="QHBoxLayout" name="layoutAccionesServidor">
@@ -35,6 +70,22 @@
           </property>
           <property name="icon">
            <iconset theme="media-playback-start"/>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QPushButton" name="botonDetener">
+          <property name="enabled">
+           <bool>false</bool>
+          </property>
+          <property name="text">
+           <string>Detener</string>
+          </property>
+          <property name="toolTip">
+           <string>Lo apaga guardando los mundos</string>
+          </property>
+          <property name="icon">
+           <iconset theme="media-playback-stop"/>
           </property>
          </widget>
         </item>
@@ -67,58 +118,149 @@
         </item>
        </layout>
       </item>
+      <item>
+       <layout class="QHBoxLayout" name="layoutAccionesServidor2">
+        <item>
+         <widget class="QPushButton" name="botonPaper">
+          <property name="text">
+           <string>Actualizar Paper (marcados)</string>
+          </property>
+          <property name="toolTip">
+           <string>Baja la última compilación estable de Paper de la versión de cada servidor marcado (los encendidos no se tocan)</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QPushButton" name="botonRam">
+          <property name="enabled">
+           <bool>false</bool>
+          </property>
+          <property name="text">
+           <string>RAM…</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QPushButton" name="botonReiniciarMundo">
+          <property name="enabled">
+           <bool>false</bool>
+          </property>
+          <property name="text">
+           <string>Reiniciar mundo…</string>
+          </property>
+          <property name="toolTip">
+           <string>Guarda el mundo en Respaldos y lo borra: al iniciarlo se crea uno nuevo</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QPushButton" name="botonCarpeta">
+          <property name="enabled">
+           <bool>false</bool>
+          </property>
+          <property name="text">
+           <string>Abrir carpeta</string>
+          </property>
+          <property name="icon">
+           <iconset theme="folder-open"/>
+          </property>
+         </widget>
+        </item>
+       </layout>
+      </item>
      </layout>
     </widget>
    </item>
    <item>
-    <widget class="QGroupBox" name="grupoPaper">
+    <widget class="QGroupBox" name="grupoPlugins">
      <property name="title">
-      <string>Actualizar Paper (en los servidores apagados de esa versión)</string>
+      <string>Plugins del servidor elegido (se reconocen en Modrinth)</string>
      </property>
-     <layout class="QHBoxLayout" name="layoutPaper">
+     <layout class="QVBoxLayout" name="layoutPlugins">
       <item>
-       <widget class="QComboBox" name="comboVersion">
-        <property name="sizeAdjustPolicy">
-         <enum>QComboBox::SizeAdjustPolicy::AdjustToContents</enum>
+       <widget class="QTreeWidget" name="arbolPlugins">
+        <property name="rootIsDecorated">
+         <bool>false</bool>
         </property>
+        <property name="uniformRowHeights">
+         <bool>true</bool>
+        </property>
+        <property name="selectionMode">
+         <enum>QAbstractItemView::SelectionMode::NoSelection</enum>
+        </property>
+        <column>
+         <property name="text">
+          <string>Plugin</string>
+         </property>
+        </column>
+        <column>
+         <property name="text">
+          <string>Versión</string>
+         </property>
+        </column>
+        <column>
+         <property name="text">
+          <string>Nueva</string>
+         </property>
+        </column>
+        <column>
+         <property name="text">
+          <string>Estado</string>
+         </property>
+        </column>
        </widget>
       </item>
       <item>
-       <widget class="QLineEdit" name="editUrlPaper">
-        <property name="placeholderText">
-         <string>URL del .jar de Paper</string>
-        </property>
-       </widget>
+       <layout class="QHBoxLayout" name="layoutAccionesPlugins">
+        <item>
+         <widget class="QPushButton" name="botonBuscarPlugins">
+          <property name="enabled">
+           <bool>false</bool>
+          </property>
+          <property name="text">
+           <string>Buscar actualizaciones</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QPushButton" name="botonActualizarPlugins">
+          <property name="enabled">
+           <bool>false</bool>
+          </property>
+          <property name="text">
+           <string>Actualizar plugins</string>
+          </property>
+          <property name="toolTip">
+           <string>Pone la versión nueva de los que la tienen (los anteriores quedan en Respaldos)</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <spacer name="espacioPlugins">
+          <property name="orientation">
+           <enum>Qt::Orientation::Horizontal</enum>
+          </property>
+         </spacer>
+        </item>
+       </layout>
       </item>
       <item>
-       <widget class="QPushButton" name="botonPaper">
-        <property name="text">
-         <string>Actualizar</string>
-        </property>
-       </widget>
-      </item>
-     </layout>
-    </widget>
-   </item>
-   <item>
-    <widget class="QGroupBox" name="grupoPlugin">
-     <property name="title">
-      <string>Plugin de Modrinth (en los servidores marcados)</string>
-     </property>
-     <layout class="QHBoxLayout" name="layoutPlugin">
-      <item>
-       <widget class="QLineEdit" name="editUrlPlugin">
-        <property name="placeholderText">
-         <string>URL del .jar en Modrinth</string>
-        </property>
-       </widget>
-      </item>
-      <item>
-       <widget class="QPushButton" name="botonPlugin">
-        <property name="text">
-         <string>Instalar</string>
-        </property>
-       </widget>
+       <layout class="QHBoxLayout" name="layoutPlugin">
+        <item>
+         <widget class="QLineEdit" name="editPlugin">
+          <property name="placeholderText">
+           <string>Plugin nuevo: nombre en Modrinth (ej. Chunky) o su URL</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QPushButton" name="botonPlugin">
+          <property name="text">
+           <string>Instalar en los marcados</string>
+          </property>
+         </widget>
+        </item>
+       </layout>
       </item>
      </layout>
     </widget>
@@ -126,7 +268,7 @@
    <item>
     <widget class="QGroupBox" name="grupoPrism">
      <property name="title">
-      <string>Prism Launcher (entra directo al servidor de casa)</string>
+      <string>Jugar con Prism Launcher</string>
      </property>
      <layout class="QHBoxLayout" name="layoutPrism">
       <item>

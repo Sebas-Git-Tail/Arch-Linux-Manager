@@ -5,7 +5,7 @@
 # Datos del paquete: nombre, versión del programa (pkgver) y número de compilación
 # de esa misma versión (pkgrel)
 pkgname=Arch-Linux-Manager
-pkgver=4.4.1
+pkgver=4.5.0
 pkgrel=1
 pkgdesc="A useful set of GUI scripts for Arch Linux"
 # Ya no es «any»: la ventana Qt (gui/) se compila para cada procesador
@@ -56,6 +56,8 @@ optdepends=(
     'waydroid: Opción Cerrar-Waydroid'
     'steam: Opción Steam Proton'
     'prismlauncher: Menú de Minecraft'
+    'playit-bin: Opción Playit (túnel para jugar desde afuera)'
+    'zstd: Reiniciar mundo (lo guarda comprimido antes de borrarlo)'
 )
 
 # Nombre que este paquete «provee» para pacman

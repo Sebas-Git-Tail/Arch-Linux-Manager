@@ -77,7 +77,8 @@ QList<Accion> acciones()
         {QStringLiteral("minecraft"), QStringLiteral("🌐"), QObject::tr("Playit"),
          QObject::tr("Abre el túnel para que se conecten desde afuera de tu red."),
          TipoAccion::Programa, QStringLiteral("konsole"),
-         {QStringLiteral("-e"), QStringLiteral("/home/sebastian/Escritorio/Cosas/Minecraft Servers/playit-linux-amd64")},
+         // playit-bin (AUR) queda en /usr/bin/playit; antes era un binario suelto en Minecraft Servers
+         {QStringLiteral("-e"), QStringLiteral("playit")},
          minecraft},
 
         // ── Servidor (antes: Lista-Server.sh) ──

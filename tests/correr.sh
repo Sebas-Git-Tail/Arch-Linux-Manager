@@ -128,6 +128,59 @@ salida=$(echo hola | COMMON="$dir" bash "$LOGICA/Notificacion.sh"); codigo=$?
 igual "sin clave ni configuración sale con 2" "$codigo" "2"
 grep -q 'sshpass\|NOTIF_CLAVE\|desofuscar' "$LOGICA/Notificacion.sh" && mal "Notificacion.sh sigue usando contraseña" || ok "Notificacion.sh no usa contraseña"
 
+echo "Minecraft.sh (servidores falsos en $TMP, API falsa: no toca la red)"
+export MINECRAFT_DIR="$TMP/mc"
+S="$MINECRAFT_DIR/Servidores"
+mkdir -p "$S/26.3 SMP-1/plugins" "$S/26.3 SMP-1/world/region" "$S/26.3 SMP-1/world_nether" "$S/26.2 Forge" "$S/sin conf"
+printf 'NOMBRE="26.3 SMP-1"\nTIPO=paper\nVERSION=26.3\nJAR="paper-26.3-244.jar"\nRAM=8G\n' > "$S/26.3 SMP-1/servidor.conf"
+printf 'level-name=world\n' > "$S/26.3 SMP-1/server.properties"
+echo datos > "$S/26.3 SMP-1/world/region/r.0.0.mca"
+printf 'TIPO=forge\nVERSION=26.2\nRAM=6G\n' > "$S/26.2 Forge/servidor.conf"
+MC() { bash "$LOGICA/Minecraft.sh" "$@" 2>&1; }
+lista=$(MC servidores)
+igual "lista solo las carpetas con servidor.conf" "$(grep -c '^SERVIDOR ' <<< "$lista")" "2"
+igual "ordena por versión" "$(grep '^SERVIDOR ' <<< "$lista" | cut -f2 | tr '\n' '|')" "26.2 Forge|26.3 SMP-1|"
+igual "informa tipo, versión, RAM y jar" "$(grep 'SMP-1' <<< "$lista" | cut -f3,4,7,8 | tr '\t' ' ')" "paper 26.3 8G paper-26.3-244.jar"
+igual "Forge arranca con run.sh" "$(grep 'Forge' <<< "$lista" | cut -f8)" "run.sh"
+MC iniciar "../../etc" > /dev/null; igual "rechaza un servidor que no existe" "$?" "2"
+MC iniciar "sin conf" > /dev/null; igual "rechaza una carpeta sin servidor.conf" "$?" "2"
+# servidor.conf con cosas raras: se ignoran (no se ejecuta nada)
+printf 'JAR="$(touch %s/pwned).jar"\nRAM=8G; rm -rf ~\nTIPO=paper\nVERSION=26.3\n' "$TMP" > "$S/26.2 Forge/servidor.conf"
+lista=$(MC servidores)
+[[ -e "$TMP/pwned" ]] && mal "servidor.conf no se ejecuta" || ok "servidor.conf no se ejecuta"
+igual "servidor.conf: ignora RAM y JAR raros" "$(grep 'Forge' <<< "$lista" | cut -f7,8 | tr '\t' ' ')" "8G run.sh"
+printf 'TIPO=forge\nVERSION=26.2\nRAM=6G\n' > "$S/26.2 Forge/servidor.conf"
+MC ram "26.3 SMP-1" 12G > /dev/null
+igual "ram cambia servidor.conf" "$(grep '^RAM=' "$S/26.3 SMP-1/servidor.conf")" 'RAM="12G"'
+MC ram "26.3 SMP-1" "12G; rm" > /dev/null; igual "ram rechaza valores raros" "$?" "2"
+salida=$(MC reiniciar-mundo "26.3 SMP-1")
+[[ ! -d "$S/26.3 SMP-1/world" && ! -d "$S/26.3 SMP-1/world_nether" ]] && ok "reiniciar-mundo borra el mundo y el nether" || mal "reiniciar-mundo borra el mundo" "$salida"
+guardado=$(ls "$MINECRAFT_DIR/Respaldos/26.3 SMP-1/mundos/"*.tar.zst 2>/dev/null | head -1)
+[[ -n "$guardado" ]] && tar --zstd -tf "$guardado" | grep -q 'world/region/r.0.0.mca' && ok "reiniciar-mundo guarda el mundo antes" || mal "reiniciar-mundo guarda el mundo antes"
+# Plugins: un jar conocido en Modrinth, uno con versión nueva y uno desconocido (respuestas falsas)
+FALSA="$TMP/api"; mkdir -p "$FALSA"; export MINECRAFT_API_FALSA="$FALSA"
+for n in viejo actual raro; do (cd "$TMP" && mkdir -p j && echo "$n" > j/a.txt && rm -f "$S/26.3 SMP-1/plugins/$n.jar" && (cd j && python3 -c "import zipfile,sys; z=zipfile.ZipFile(sys.argv[1],'w'); z.write('a.txt'); z.close()" "$S/26.3 SMP-1/plugins/$n.jar")); done
+python3 - "$FALSA" "$S/26.3 SMP-1/plugins" <<'PY'
+import hashlib, json, os, re, sys
+falsa, plugins = sys.argv[1:3]
+h = {n: hashlib.sha1(open(os.path.join(plugins, n + ".jar"), "rb").read()).hexdigest() for n in ("viejo", "actual", "raro")}
+def guardar(url, datos):
+    nombre = re.sub(r"[^A-Za-z0-9]+", "_", url.split("://", 1)[-1])[:150] + ".json"
+    json.dump(datos, open(os.path.join(falsa, nombre), "w"))
+def version(vid, num, sha1):
+    return {"id": vid, "project_id": "P" + vid[0], "version_number": num,
+            "files": [{"primary": True, "url": "https://cdn.modrinth.com/x.jar", "filename": "nuevo.jar", "hashes": {"sha1": sha1, "sha512": "ab"}}]}
+guardar("https://api.modrinth.com/v2/version_files", {h["viejo"]: version("v1", "1.0", h["viejo"]), h["actual"]: version("w1", "2.0", h["actual"])})
+guardar("https://api.modrinth.com/v2/version_files/update", {h["viejo"]: version("v2", "1.5", "otro"), h["actual"]: version("w1", "2.0", h["actual"])})
+guardar('https://api.modrinth.com/v2/projects?ids=%5B%22Pv%22%2C%20%22Pw%22%5D', [{"id": "Pv", "title": "Plugin Viejo"}, {"id": "Pw", "title": "Plugin Al Día"}])
+PY
+plug=$(MC plugins "26.3 SMP-1")
+igual "plugin con versión nueva" "$(grep 'viejo.jar' <<< "$plug" | cut -f2,3,4,5 | tr '\t' '|')" "Plugin Viejo|1.0|1.5|NUEVA"
+igual "plugin al día" "$(grep 'actual.jar' <<< "$plug" | cut -f5)" "AL_DIA"
+igual "plugin que no está en Modrinth" "$(grep 'raro.jar' <<< "$plug" | cut -f5)" "DESCONOCIDO"
+MC plugins-actualizar "26.3 SMP-1" "../../x.jar" > /dev/null; igual "plugins-actualizar rechaza rutas" "$?" "2"
+unset MINECRAFT_API_FALSA MINECRAFT_DIR
+
 echo
 if (( fallas == 0 )); then
     echo "Todas bien ($pruebas pruebas)."
