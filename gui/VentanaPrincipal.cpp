@@ -50,6 +50,7 @@ VentanaPrincipal::VentanaPrincipal(const QString &base, QWidget *parent)
     ui->layoutEstado->insertWidget(0, chipEquipo);
     ui->layoutEstado->insertWidget(1, chipServidor);
     ui->layoutEstado->setSpacing(8);
+    ui->layoutEncabezado->addWidget(tema::botonModo(this));   // modo claro / oscuro (se recuerda)
 
     // Las páginas de herramientas se crean una sola vez (así una descarga sigue aunque
     // se cambie de sección). La clave es el «destino» de su acción en Acciones.cpp.

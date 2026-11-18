@@ -23,12 +23,12 @@
 int main(int argc, char *argv[])
 {
     QApplication app(argc, argv);
-    tema::aplicar(app);             // tema oscuro común con el celeste del sitio (comun/ui)
     apps::cargarTraduccionesQt();   // botones estándar en español (comun/apps; Android y Windows no traen la traducción)
     QApplication::setApplicationName(QStringLiteral("Arch-Linux-Manager"));
     QApplication::setApplicationVersion(QStringLiteral(VERSION_PROGRAMA));
     // Mismo nombre que el .desktop, así KDE le pone el ícono y el atajo del Manager
     QApplication::setDesktopFileName(QStringLiteral("Arch-Linux-Manager"));
+    tema::aplicar(app);             // tema común (claro u oscuro) con el celeste del sitio (comun/ui)
 
     QCommandLineParser opciones;
     opciones.setApplicationDescription(QStringLiteral("Conjunto de herramientas para Arch Linux"));
