@@ -135,8 +135,11 @@
     <layout class="QHBoxLayout" name="layoutBotones">
      <item>
       <widget class="QPushButton" name="botonDescargar">
+       <property name="primario" stdset="0">
+        <bool>true</bool>
+       </property>
        <property name="text">
-        <string>▶ Descargar</string>
+        <string>Descargar</string>
        </property>
        <property name="default">
         <bool>true</bool>
@@ -228,6 +231,9 @@
         </item>
         <item>
          <widget class="QPushButton" name="botonPapelera">
+          <property name="peligro" stdset="0">
+           <bool>true</bool>
+          </property>
           <property name="enabled">
            <bool>false</bool>
           </property>

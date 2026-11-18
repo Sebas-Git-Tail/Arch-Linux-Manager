@@ -1,4 +1,5 @@
 #include "PaginaTutoriales.h"
+#include "Tema.h"
 #include "ui_PaginaTutoriales.h"
 
 #include <QDir>
@@ -32,11 +33,11 @@ PaginaTutoriales::PaginaTutoriales(const QString &logica, QWidget *parent)
     connect(&proceso, &ProcesoLogica::terminado, this, [this](int codigo, bool) {
         ui->botonActualizar->setEnabled(true);
         if (codigo == 0) {
-            ui->etiquetaEstado->setText(ui->listaVideos->count() == 1 ? tr("1 video.")
+            tema::mostrarEstado(ui->etiquetaEstado, ui->listaVideos->count() == 1 ? tr("1 video.")
                                                                       : tr("%1 videos.").arg(ui->listaVideos->count()));
             ui->listaVideos->setCurrentRow(0);
         } else {
-            ui->etiquetaEstado->setText(QStringLiteral("✗ ") + (error.isEmpty() ? tr("No se pudo listar los videos.") : error));
+            tema::mostrarEstado(ui->etiquetaEstado, (error.isEmpty() ? tr("No se pudo listar los videos.") : error), tema::Estado::Error);
         }
     });
 }
@@ -63,7 +64,7 @@ void PaginaTutoriales::listar()
     error.clear();
     ui->listaVideos->clear();
     ui->botonActualizar->setEnabled(false);
-    ui->etiquetaEstado->setText(tr("Buscando videos en el servidor…"));
+    tema::mostrarEstado(ui->etiquetaEstado, tr("Buscando videos en el servidor…"));
     proceso.iniciar(script, {});
 }
 
@@ -73,7 +74,7 @@ void PaginaTutoriales::ver()
     if (!item)
         return;
     if (QProcess::startDetached(QStringLiteral("mpv"), {item->data(RolUrl).toString()}))
-        ui->etiquetaEstado->setText(tr("Abriendo %1 en mpv…").arg(item->text()));
+        tema::mostrarEstado(ui->etiquetaEstado, tr("Abriendo %1 en mpv…").arg(item->text()));
     else
         QMessageBox::warning(this, windowTitle(), tr("No se pudo abrir mpv."));
 }

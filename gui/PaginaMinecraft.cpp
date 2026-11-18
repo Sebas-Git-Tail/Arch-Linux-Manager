@@ -1,4 +1,5 @@
 #include "PaginaMinecraft.h"
+#include "Tema.h"
 #include "ui_PaginaMinecraft.h"
 
 #include <QDate>
@@ -113,8 +114,8 @@ void PaginaMinecraft::eventoConsulta(const QString &palabra, const QString &rest
 
         const QSignalBlocker bloqueo(ui->arbolServidores);
         auto *item = new QTreeWidgetItem(ui->arbolServidores);
-        item->setText(0, (encendido ? QStringLiteral("🟢  ") : QStringLiteral("⚫  ")) + nombre
-                             + (encendido ? tr("  (encendido)") : QString()));
+        item->setText(0, nombre + (encendido ? tr("  (encendido)") : QString()));
+        item->setIcon(0, tema::icono(QStringLiteral("punto"), encendido ? tema::colores().ok : tema::colores().texto3));
         item->setText(1, (c.at(2) == u"forge" ? QStringLiteral("Forge ") : QStringLiteral("Paper ")) + c.at(3));
         item->setText(2, c.at(4));
         item->setText(3, ultimo);
@@ -178,10 +179,12 @@ void PaginaMinecraft::eventoPlugins(const QString &palabra, const QString &resto
     const QString &estado = c.at(4);
     if (estado == u"NUEVA") {
         item->setText(2, c.at(3));
-        item->setText(3, tr("⬆ versión nueva"));
+        item->setText(3, tr("Versión nueva"));
+        item->setForeground(3, tema::colores().aviso);
         ++pluginsNuevos;
     } else if (estado == u"AL_DIA") {
-        item->setText(3, tr("✓ al día"));
+        item->setText(3, tr("Al día"));
+        item->setForeground(3, tema::colores().ok);
     } else if (estado == u"SIN_VERSION") {
         item->setText(3, tr("sin versión para esta versión de Minecraft"));
     } else {
@@ -230,7 +233,7 @@ void PaginaMinecraft::actualizarBotones()
 void PaginaMinecraft::ejecutar(const QStringList &argumentos, const QString &estado)
 {
     mensajeFinal.clear();
-    ui->etiquetaEstado->setText(estado);
+    tema::mostrarEstado(ui->etiquetaEstado, estado);
     ui->barraProgreso->setRange(0, 0);    // sin porcentaje: barra «ocupada»
     ui->barraProgreso->show();
     accion.iniciar(script, argumentos);
@@ -268,7 +271,7 @@ void PaginaMinecraft::actualizarPaper()
     if (servidores.isEmpty() && !servidorElegido().isEmpty())
         servidores << servidorElegido();
     if (servidores.isEmpty()) {
-        ui->etiquetaEstado->setText(tr("Marcá (o elegí) al menos un servidor."));
+        tema::mostrarEstado(ui->etiquetaEstado, tr("Marcá (o elegí) al menos un servidor."));
         return;
     }
     if (QMessageBox::question(this, windowTitle(),
@@ -326,14 +329,14 @@ void PaginaMinecraft::instalarPlugin()
 {
     const QString texto = ui->editPlugin->text().trimmed();
     if (texto.isEmpty()) {
-        ui->etiquetaEstado->setText(tr("Escribí el nombre del plugin en Modrinth (o pegá su URL)."));
+        tema::mostrarEstado(ui->etiquetaEstado, tr("Escribí el nombre del plugin en Modrinth (o pegá su URL)."));
         return;
     }
     QStringList servidores = servidoresMarcados();
     if (servidores.isEmpty() && !servidorElegido().isEmpty())
         servidores << servidorElegido();
     if (servidores.isEmpty()) {
-        ui->etiquetaEstado->setText(tr("Marcá (o elegí) al menos un servidor."));
+        tema::mostrarEstado(ui->etiquetaEstado, tr("Marcá (o elegí) al menos un servidor."));
         return;
     }
     recargarPlugins = true;
@@ -348,7 +351,7 @@ void PaginaMinecraft::jugar()
 void PaginaMinecraft::eventoAccion(const QString &palabra, const QString &resto)
 {
     if (palabra == u"ETAPA") {
-        ui->etiquetaEstado->setText(resto + QStringLiteral("…"));
+        tema::mostrarEstado(ui->etiquetaEstado, resto + QStringLiteral("…"));
     } else if (palabra == u"ESPERA") {
         // Detener: hasta 2 minutos guardando mundos
         ui->barraProgreso->setRange(0, 120);
@@ -364,11 +367,11 @@ void PaginaMinecraft::terminoAccion(int codigo, bool cancelado)
 {
     ui->barraProgreso->hide();
     if (cancelado)
-        ui->etiquetaEstado->setText(tr("Cancelado."));
+        tema::mostrarEstado(ui->etiquetaEstado, tr("Cancelado."));
     else if (codigo == 0)
-        ui->etiquetaEstado->setText(QStringLiteral("✓ ") + mensajeFinal);
+        tema::mostrarEstado(ui->etiquetaEstado, mensajeFinal, tema::Estado::Ok);
     else
-        ui->etiquetaEstado->setText(QStringLiteral("✗ ") + (mensajeFinal.isEmpty() ? tr("No se pudo completar.") : mensajeFinal));
+        tema::mostrarEstado(ui->etiquetaEstado, (mensajeFinal.isEmpty() ? tr("No se pudo completar.") : mensajeFinal), tema::Estado::Error);
     if (!mensajeFinal.isEmpty())
         ui->registro->appendPlainText(mensajeFinal);
     actualizarBotones();

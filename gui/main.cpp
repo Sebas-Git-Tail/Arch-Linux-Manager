@@ -8,6 +8,7 @@
 //   Arch-Linux-Manager-Qt --base ~/Escritorio/Manager/src/Resources
 
 #include "VentanaPrincipal.h"
+#include "Tema.h"
 #include "Traducciones.h"
 
 #include <QApplication>
@@ -21,6 +22,7 @@
 int main(int argc, char *argv[])
 {
     QApplication app(argc, argv);
+    tema::aplicar(app);             // tema oscuro común con el celeste del sitio (comun/ui)
     apps::cargarTraduccionesQt();   // botones estándar en español (comun/apps; Android y Windows no traen la traducción)
     QApplication::setApplicationName(QStringLiteral("Arch-Linux-Manager"));
     QApplication::setApplicationVersion(QStringLiteral(VERSION_PROGRAMA));

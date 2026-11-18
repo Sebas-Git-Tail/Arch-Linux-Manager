@@ -45,6 +45,9 @@
      </item>
      <item>
       <widget class="QPushButton" name="botonEnviar">
+       <property name="primario" stdset="0">
+        <bool>true</bool>
+       </property>
        <property name="text">
         <string>Enviar</string>
        </property>

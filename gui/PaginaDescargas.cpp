@@ -1,4 +1,5 @@
 #include "PaginaDescargas.h"
+#include "Tema.h"
 
 #include <algorithm>
 #include "ui_PaginaDescargas.h"
@@ -151,13 +152,13 @@ void PaginaDescargas::descargar()
             urls << linea.trimmed();
     }
     if (urls.isEmpty()) {
-        ui->etiquetaEstado->setText(tr("No se ingresó ninguna URL."));
+        tema::mostrarEstado(ui->etiquetaEstado, tr("No se ingresó ninguna URL."));
         return;
     }
 
     const QString carpeta = destino();
     if (carpeta.isEmpty()) {
-        ui->etiquetaEstado->setText(tr("Elegí una carpeta de destino."));
+        tema::mostrarEstado(ui->etiquetaEstado, tr("Elegí una carpeta de destino."));
         return;
     }
 
@@ -193,7 +194,7 @@ void PaginaDescargas::buscarPistas()
     ui->barraTotal->setRange(0, urlsEnCurso.size());
     ui->barraTotal->setValue(0);
     ui->barraTotal->show();
-    ui->etiquetaEstado->setText(tr("Buscando calidades, subtítulos y pistas de audio…"));
+    tema::mostrarEstado(ui->etiquetaEstado, tr("Buscando calidades, subtítulos y pistas de audio…"));
 
     proceso.start(QStringLiteral("bash"), argumentos);
 }
@@ -212,7 +213,7 @@ void PaginaDescargas::terminoPistas(int codigo, QProcess::ExitStatus estado)
         iniciarDescarga({});
     } else {
         ui->barraTotal->setValue(ui->barraTotal->maximum());
-        ui->etiquetaEstado->setText(tr("Elegí la calidad, los códecs y qué subtítulos y pistas de audio incluir."));
+        tema::mostrarEstado(ui->etiquetaEstado, tr("Elegí la calidad, los códecs y qué subtítulos y pistas de audio incluir."));
         DialogoPistas dialogo(audiosOfrecidos.values(), subtitulosOfrecidos.values(), formatosOfrecidos,
                               codecsAudioOfrecidos, this);
         if (dialogo.abrir() == QDialog::Accepted)
@@ -228,7 +229,7 @@ void PaginaDescargas::terminar(const QString &estado)
     habilitarFormulario(true);
     ui->barraArchivo->hide();
     ui->barraTotal->hide();
-    ui->etiquetaEstado->setText(estado);
+    tema::mostrarEstado(ui->etiquetaEstado, estado);
 }
 
 // eleccion: lo elegido en el diálogo (vacío = descarga de siempre, en MKV)
@@ -264,7 +265,7 @@ void PaginaDescargas::iniciarDescarga(const Eleccion &eleccion)
     ui->barraTotal->setValue(0);
     ui->barraArchivo->show();
     ui->barraTotal->show();
-    ui->etiquetaEstado->setText(tr("Preparando descarga..."));
+    tema::mostrarEstado(ui->etiquetaEstado, tr("Preparando descarga..."));
 
     proceso.start(QStringLiteral("bash"), argumentos);
 }
@@ -275,7 +276,7 @@ void PaginaDescargas::cancelar()
         return;
     cancelado = true;
     ::kill(-static_cast<pid_t>(proceso.processId()), SIGTERM);    // todo el grupo
-    ui->etiquetaEstado->setText(tr("Cancelando..."));
+    tema::mostrarEstado(ui->etiquetaEstado, tr("Cancelando..."));
 }
 
 void PaginaDescargas::leerSalida()
@@ -304,7 +305,7 @@ void PaginaDescargas::procesarEvento(const QString &linea)
         const int n = partes.value(0).toInt();
         ui->barraTotal->setValue(n - 1);
         ui->barraArchivo->setValue(0);
-        ui->etiquetaEstado->setText(buscandoPistas
+        tema::mostrarEstado(ui->etiquetaEstado, buscandoPistas
                 ? tr("Buscando calidades, subtítulos y pistas de audio (URL %1 de %2)…").arg(n).arg(partes.value(1))
                 : tr("URL %1 de %2: %3").arg(n).arg(partes.value(1), partes.value(2)));
     } else if (evento == u"AUDIO") {
@@ -335,11 +336,11 @@ void PaginaDescargas::procesarEvento(const QString &linea)
     } else if (evento == u"ARCHIVO") {
         archivoActual = resto;
         ui->barraArchivo->setValue(0);
-        ui->etiquetaEstado->setText(tr("Descargando %1").arg(archivoActual));
+        tema::mostrarEstado(ui->etiquetaEstado, tr("Descargando %1").arg(archivoActual));
     } else if (evento == u"PROGRESO") {
         ui->barraArchivo->setValue(resto.toInt());
         if (resto.toInt() >= 100)
-            ui->etiquetaEstado->setText(tr("Procesando %1 (metadatos y carátula)...").arg(archivoActual));
+            tema::mostrarEstado(ui->etiquetaEstado, tr("Procesando %1 (metadatos y carátula)...").arg(archivoActual));
     } else if (evento == u"MINIATURA") {
         miniaturaPendiente = resto;
     } else if (evento == u"LISTO") {
@@ -389,19 +390,19 @@ void PaginaDescargas::terminoProceso(int codigo, QProcess::ExitStatus estado)
 
     const bool musica = tipo == Tipo::Musica;
     if (cancelado) {
-        ui->etiquetaEstado->setText(tr("Descarga cancelada."));
+        tema::mostrarEstado(ui->etiquetaEstado, tr("Descarga cancelada."));
     } else if (estado == QProcess::CrashExit || codigo == 2) {
-        ui->etiquetaEstado->setText(tr("No se pudo descargar (ver los avisos abajo)."));
+        tema::mostrarEstado(ui->etiquetaEstado, tr("No se pudo descargar (ver los avisos abajo)."));
     } else if (fallidas == 0) {
         if (tipo == Tipo::Archivos)
-            ui->etiquetaEstado->setText(tr("Descargas completadas en %1.").arg(destino()));
+            tema::mostrarEstado(ui->etiquetaEstado, tr("Descargas completadas en %1.").arg(destino()));
         else if (listas == 1)
-            ui->etiquetaEstado->setText(musica ? tr("Listo: 1 canción descargada.") : tr("Listo: 1 video descargado."));
+            tema::mostrarEstado(ui->etiquetaEstado, musica ? tr("Listo: 1 canción descargada.") : tr("Listo: 1 video descargado."));
         else
-            ui->etiquetaEstado->setText((musica ? tr("Listo: %1 canciones descargadas.") : tr("Listo: %1 videos descargados."))
+            tema::mostrarEstado(ui->etiquetaEstado, (musica ? tr("Listo: %1 canciones descargadas.") : tr("Listo: %1 videos descargados."))
                                             .arg(listas));
     } else {
-        ui->etiquetaEstado->setText(tr("Terminado con errores: %1 descargado(s), %2 URL(s) fallaron.")
+        tema::mostrarEstado(ui->etiquetaEstado, tr("Terminado con errores: %1 descargado(s), %2 URL(s) fallaron.")
                                         .arg(listas).arg(fallidas));
     }
 }

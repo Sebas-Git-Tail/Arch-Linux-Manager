@@ -1,5 +1,7 @@
 #include "VentanaPrincipal.h"
 #include "PanelApps.h"
+#include "Piezas.h"
+#include "Tema.h"
 #include "ui_VentanaPrincipal.h"
 
 #include "PaginaDescargas.h"
@@ -12,10 +14,10 @@
 #include "ProcesoLogica.h"
 
 #include <QCloseEvent>
-#include <QCommandLinkButton>
 #include <QDir>
 #include <QActionGroup>
 #include <QGridLayout>
+#include <QLabel>
 #include <QMenu>
 #include <QMessageBox>
 #include <QScrollArea>
@@ -28,12 +30,26 @@ VentanaPrincipal::VentanaPrincipal(const QString &base, QWidget *parent)
 {
     ui->setupUi(this);
 
-    // Título de la página un poco más grande que el resto
-    QFont fuente = ui->etiquetaTitulo->font();
-    fuente.setPointSizeF(fuente.pointSizeF() * 1.4);
-    fuente.setBold(true);
-    ui->etiquetaTitulo->setFont(fuente);
+    // Estilo común (comun/ui): título grande, menú lateral, íconos SVG y el estado como «chips»
+    ui->etiquetaTitulo->setProperty("titulo", true);
     ui->botonVolver->hide();
+    ui->botonVolver->setIcon(tema::icono(QStringLiteral("volver")));
+    ui->botonVolver->setProperty("plano", true);
+    ui->botonRefrescar->setIcon(tema::icono(QStringLiteral("actualizar")));
+    ui->botonEquipo->setIcon(tema::icono(QStringLiteral("ajustes")));
+    ui->listaSecciones->setProperty("lateral", true);
+    ui->listaSecciones->setIconSize(QSize(18, 18));
+    ui->listaSecciones->setSpacing(0);
+    ui->etiquetaCargando->setProperty("secundario", true);
+    ui->etiquetaEstado->setProperty("secundario", true);
+    chipEquipo = new QLabel(this);
+    chipServidor = new QLabel(this);
+    tema::marcarChip(chipEquipo, tema::Estado::Neutro);
+    chipEquipo->hide();
+    chipServidor->hide();
+    ui->layoutEstado->insertWidget(0, chipEquipo);
+    ui->layoutEstado->insertWidget(1, chipServidor);
+    ui->layoutEstado->setSpacing(8);
 
     // Las páginas de herramientas se crean una sola vez (así una descarga sigue aunque
     // se cambie de sección). La clave es el «destino» de su acción en Acciones.cpp.
@@ -127,7 +143,7 @@ void VentanaPrincipal::comprobarEntorno(bool refrescar)
     if (procesoEntorno.state() != QProcess::NotRunning)
         return;
     ui->botonRefrescar->setEnabled(false);
-    ui->etiquetaEstado->setText(tr("Comprobando la computadora y el servidor…"));
+    tema::mostrarEstado(ui->etiquetaEstado, tr("Comprobando la computadora y el servidor…"));
 
     QStringList argumentos{QDir(base).filePath(QStringLiteral("Logica/Entorno.sh"))};
     if (refrescar)
@@ -141,8 +157,9 @@ void VentanaPrincipal::terminoEntorno(int codigo, QProcess::ExitStatus estado)
 {
     ui->botonRefrescar->setEnabled(true);
     if (estado != QProcess::NormalExit || codigo != 0) {
-        ui->etiquetaEstado->setText(tr("No se pudo comprobar el entorno: %1")
-                                        .arg(QString::fromUtf8(procesoEntorno.readAllStandardError()).trimmed()));
+        tema::avisar(this, tr("No se pudo comprobar el entorno: %1")
+                               .arg(QString::fromUtf8(procesoEntorno.readAllStandardError()).trimmed()),
+                     tema::Estado::Error);
     }
 
     Entorno nuevo;
@@ -193,9 +210,16 @@ void VentanaPrincipal::mostrarEstado()
         if (id == entorno.maquina)
             nombre = texto;
     }
-    ui->etiquetaEstado->setText(tr("%1%2 · Servidor: %3")
-                                    .arg(nombre, entorno.maquinaElegida ? QString() : tr(" (por la placa de red)"),
-                                         entorno.servidor ? tr("activo ✓") : tr("sin conexión ✗")));
+    ui->etiquetaEstado->clear();
+    chipEquipo->setText(nombre);
+    chipEquipo->setToolTip(entorno.maquinaElegida ? tr("Elegida a mano con «Este equipo…»")
+                                                  : tr("Reconocida por la placa de red"));
+    chipEquipo->show();
+    chipServidor->setText(entorno.servidor ? tr("Servidor conectado") : tr("Servidor sin conexión"));
+    chipServidor->setToolTip(entorno.servidor ? tr("Respaldos, tutoriales y descargas del servidor disponibles")
+                                              : tr("Sin el servidor no se ven los respaldos ni los tutoriales"));
+    tema::marcarChip(chipServidor, entorno.servidor ? tema::Estado::Ok : tema::Estado::Error);
+    chipServidor->show();
 
     // «Este equipo…» es para depurar: solo en las computadoras de Sebastián
     ui->botonEquipo->setVisible(entorno.puedeElegirEquipo);
@@ -235,17 +259,16 @@ void VentanaPrincipal::elegirEquipo(const QString &equipo)
     guardar.start(QStringLiteral("bash"), {QDir(base).filePath(QStringLiteral("Logica/Entorno.sh")),
                                            QStringLiteral("--equipo"), equipo});
     if (!guardar.waitForFinished(5000) || guardar.exitCode() != 0) {
-        QMessageBox::warning(this, windowTitle(), tr("No se pudo guardar el equipo."));
+        avisar(tr("No se pudo guardar el equipo."), tema::Estado::Error);
         return;
     }
     comprobarEntorno();    // las secciones dependen del equipo
 }
 
-// Mensaje temporal en la barra de abajo (vuelve al estado a los 4 segundos)
-void VentanaPrincipal::avisar(const QString &texto)
+// Aviso flotante abajo de la ventana (se va solo)
+void VentanaPrincipal::avisar(const QString &texto, tema::Estado estado)
 {
-    ui->etiquetaEstado->setText(texto);
-    QTimer::singleShot(4000, this, &VentanaPrincipal::mostrarEstado);
+    tema::avisar(this, texto, estado);
 }
 
 // Rearma el menú lateral y las páginas de tarjetas con el entorno actual. Si la
@@ -280,9 +303,12 @@ void VentanaPrincipal::construirSecciones()
         paginasSeccion.insert(seccion.id, pagina);
         idsSecciones << seccion.id;
 
-        auto *item = new QListWidgetItem(seccion.icono + QStringLiteral("  ") + seccion.titulo, ui->listaSecciones);
-        item->setSizeHint(QSize(0, 40));
+        auto *item = new QListWidgetItem(tema::icono(seccion.icono, tema::colores().texto2), seccion.titulo,
+                                         ui->listaSecciones);
+        item->setSizeHint(QSize(0, 38));
     }
+    // Con una sola sección (p. ej. en una computadora ajena) el menú lateral no aporta nada
+    ui->listaSecciones->setVisible(idsSecciones.size() > 1);
 
     const int fila = qMax(0, idsSecciones.indexOf(anterior));
     ui->listaSecciones->setCurrentRow(fila);
@@ -290,28 +316,30 @@ void VentanaPrincipal::construirSecciones()
         cambiarSeccion(fila);
 }
 
-// Página con una tarjeta (QCommandLinkButton: título y descripción) por acción
+// Página con una tarjeta (ícono, título y descripción) por acción, en dos columnas
 QWidget *VentanaPrincipal::crearPaginaSeccion(const QList<Accion> &lista)
 {
     auto *contenido = new QWidget;
+    contenido->setObjectName(QStringLiteral("contenidoSeccion"));
     auto *grilla = new QGridLayout(contenido);
+    grilla->setContentsMargins(0, 4, 4, 0);
     grilla->setSpacing(10);
 
     for (qsizetype i = 0; i < lista.size(); ++i) {
         const Accion accion = lista.at(i);
-        auto *tarjeta = new QCommandLinkButton(accion.icono + QStringLiteral("  ") + accion.titulo,
-                                               accion.descripcion, contenido);
-        tarjeta->setIcon(QIcon());    // el ícono es el emoji del título
-        tarjeta->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Minimum);
-        connect(tarjeta, &QCommandLinkButton::clicked, this, [this, accion] { lanzar(accion); });
+        auto *tarjeta = new tema::TarjetaAccion(accion.icono, accion.titulo, accion.descripcion, contenido);
+        connect(tarjeta, &tema::TarjetaAccion::clicked, this, [this, accion] { lanzar(accion); });
         grilla->addWidget(tarjeta, static_cast<int>(i / 2), static_cast<int>(i % 2));
     }
+    grilla->setColumnStretch(0, 1);
+    grilla->setColumnStretch(1, 1);
     grilla->setRowStretch(grilla->rowCount(), 1);
 
     auto *desplazable = new QScrollArea;
     desplazable->setWidget(contenido);
     desplazable->setWidgetResizable(true);
     desplazable->setFrameShape(QFrame::NoFrame);
+    desplazable->setStyleSheet(QStringLiteral("QScrollArea, #contenidoSeccion { background: transparent; }"));
     return desplazable;
 }
 
@@ -351,12 +379,14 @@ void VentanaPrincipal::lanzar(const Accion &accion)
                 *final = resto;
         });
         connect(proceso, &ProcesoLogica::terminado, this, [this, proceso, final, accion](int codigo, bool) {
-            avisar(codigo == 0 ? QStringLiteral("✓ ") + (final->isEmpty() ? accion.titulo : *final)
-                               : QStringLiteral("✗ ") + (final->isEmpty() ? tr("No se pudo: %1").arg(accion.titulo) : *final));
+            if (codigo == 0)
+                avisar(final->isEmpty() ? accion.titulo : *final, tema::Estado::Ok);
+            else
+                avisar(final->isEmpty() ? tr("No se pudo: %1").arg(accion.titulo) : *final, tema::Estado::Error);
             delete final;
             proceso->deleteLater();
         });
-        ui->etiquetaEstado->setText(tr("%1…").arg(accion.titulo));
+        avisar(tr("%1…").arg(accion.titulo));
         proceso->iniciar(QDir(base).filePath(accion.destino), accion.argumentos);
         return;
     }
@@ -383,5 +413,5 @@ void VentanaPrincipal::lanzar(const Accion &accion)
     if (proceso.startDetached())
         avisar(tr("Abriendo %1…").arg(accion.titulo));
     else
-        QMessageBox::warning(this, windowTitle(), tr("No se pudo abrir %1.").arg(accion.titulo));
+        avisar(tr("No se pudo abrir %1.").arg(accion.titulo), tema::Estado::Error);
 }

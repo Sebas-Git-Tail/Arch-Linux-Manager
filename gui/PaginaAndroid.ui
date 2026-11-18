@@ -34,6 +34,9 @@
         </item>
         <item>
          <widget class="QPushButton" name="botonBuscar">
+          <property name="primario" stdset="0">
+           <bool>true</bool>
+          </property>
           <property name="text">
            <string>Buscar</string>
           </property>

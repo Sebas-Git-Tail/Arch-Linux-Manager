@@ -1,4 +1,5 @@
 #include "PaginaNotificacion.h"
+#include "Tema.h"
 #include "ui_PaginaNotificacion.h"
 
 #include <QDir>
@@ -17,10 +18,10 @@ PaginaNotificacion::PaginaNotificacion(const QString &logica, QWidget *parent)
     connect(&proceso, &ProcesoLogica::terminado, this, [this](int codigo, bool) {
         ui->botonEnviar->setEnabled(true);
         if (codigo == 0) {
-            ui->etiquetaEstado->setText(QStringLiteral("✓ ") + mensajeFinal);
+            tema::mostrarEstado(ui->etiquetaEstado, mensajeFinal, tema::Estado::Ok);
             ui->editMensaje->clear();
         } else {
-            ui->etiquetaEstado->setText(QStringLiteral("✗ ") + (mensajeFinal.isEmpty() ? tr("No se pudo enviar.") : mensajeFinal));
+            tema::mostrarEstado(ui->etiquetaEstado, (mensajeFinal.isEmpty() ? tr("No se pudo enviar.") : mensajeFinal), tema::Estado::Error);
         }
     });
 }
@@ -34,11 +35,11 @@ void PaginaNotificacion::enviar()
 {
     const QString mensaje = ui->editMensaje->toPlainText().trimmed();
     if (mensaje.isEmpty()) {
-        ui->etiquetaEstado->setText(tr("No se escribió ningún mensaje."));
+        tema::mostrarEstado(ui->etiquetaEstado, tr("No se escribió ningún mensaje."), tema::Estado::Aviso);
         return;
     }
     mensajeFinal.clear();
     ui->botonEnviar->setEnabled(false);
-    ui->etiquetaEstado->setText(tr("Enviando…"));
+    tema::mostrarEstado(ui->etiquetaEstado, tr("Enviando…"));
     proceso.iniciar(script, {}, mensaje.left(1000).toUtf8());
 }

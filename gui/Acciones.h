@@ -36,7 +36,7 @@ enum class TipoAccion {
 struct Accion
 {
     QString seccion;
-    QString icono;          // emoji, como en los menús de antes
+    QString icono;          // nombre de comun/ui/iconos (tema::icono)
     QString titulo;
     QString descripcion;
     TipoAccion tipo;
@@ -48,7 +48,7 @@ struct Accion
 struct Seccion
 {
     QString id;
-    QString icono;
+    QString icono;          // nombre de comun/ui/iconos
     QString titulo;
 };
 

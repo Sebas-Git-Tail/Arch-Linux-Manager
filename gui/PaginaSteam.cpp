@@ -1,4 +1,5 @@
 #include "PaginaSteam.h"
+#include "Tema.h"
 #include "ui_PaginaSteam.h"
 
 #include <QDesktopServices>
@@ -92,7 +93,7 @@ void PaginaSteam::procesarEvento(const QString &palabra, const QString &resto)
         const bool alDia = instaladas.contains(version);
         ui->etiquetaUltima->setText(alDia ? tr("%1 (ya está instalada ✓)").arg(version) : version);
     } else if (palabra == u"ETAPA") {
-        ui->etiquetaEstado->setText(resto + QStringLiteral("…"));
+        tema::mostrarEstado(ui->etiquetaEstado, resto + QStringLiteral("…"));
     } else if (palabra == u"PROGRESO") {
         ui->barraProgreso->setValue(resto.toInt());
     } else if (palabra == u"LISTO" || palabra == u"ERROR") {
@@ -124,16 +125,16 @@ void PaginaSteam::terminoProceso(int codigo, bool cancelado)
         break;
     case Paso::Instalar:
         if (cancelado) {
-            ui->etiquetaEstado->setText(tr("Instalación cancelada."));
+            tema::mostrarEstado(ui->etiquetaEstado, tr("Instalación cancelada."));
         } else if (codigo == 0) {
             ui->barraProgreso->setValue(100);
-            ui->etiquetaEstado->setText(tr("✓ %1 instalado. Recordá elegirlo en los ajustes de compatibilidad de Steam.")
-                                            .arg(mensajeFinal));
+            tema::mostrarEstado(ui->etiquetaEstado, tr("%1 instalado. Recordá elegirlo en los ajustes de compatibilidad de Steam.")
+                                            .arg(mensajeFinal), tema::Estado::Ok);
             habilitar(true);
             consultar();    // para que se vea la versión nueva
             return;
         } else {
-            ui->etiquetaEstado->setText(QStringLiteral("✗ ") + (mensajeFinal.isEmpty() ? tr("No se pudo instalar.") : mensajeFinal));
+            tema::mostrarEstado(ui->etiquetaEstado, (mensajeFinal.isEmpty() ? tr("No se pudo instalar.") : mensajeFinal), tema::Estado::Error);
         }
         break;
     case Paso::Nada:

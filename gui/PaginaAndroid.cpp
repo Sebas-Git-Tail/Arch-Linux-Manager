@@ -1,4 +1,5 @@
 #include "PaginaAndroid.h"
+#include "Tema.h"
 #include "ui_PaginaAndroid.h"
 
 #include <QDir>
@@ -81,7 +82,7 @@ void PaginaAndroid::ejecutar(const QStringList &argumentos, const QString &estad
     ui->registro->clear();
     ui->barraProgreso->setValue(0);
     ui->barraProgreso->show();
-    ui->etiquetaEstado->setText(estado);
+    tema::mostrarEstado(ui->etiquetaEstado, estado);
     habilitar(false);
     // El serial elegido va siempre: con dos celulares, adb sin --serial no sabe a cuál ir
     proceso.iniciar(script, argumentos + QStringList{QStringLiteral("--serial"), ui->comboCelular->currentData().toString()});
@@ -167,9 +168,9 @@ void PaginaAndroid::terminoProceso(int codigo, bool cancelado)
 
     habilitar(true);
     if (cancelado)
-        ui->etiquetaEstado->setText(tr("Cancelado."));
+        tema::mostrarEstado(ui->etiquetaEstado, tr("Cancelado."));
     else if (codigo == 0)
-        ui->etiquetaEstado->setText(QStringLiteral("✓ ") + mensajeFinal);
+        tema::mostrarEstado(ui->etiquetaEstado, mensajeFinal, tema::Estado::Ok);
     else
-        ui->etiquetaEstado->setText(QStringLiteral("✗ ") + (mensajeFinal.isEmpty() ? tr("No se pudo completar.") : mensajeFinal));
+        tema::mostrarEstado(ui->etiquetaEstado, (mensajeFinal.isEmpty() ? tr("No se pudo completar.") : mensajeFinal), tema::Estado::Error);
 }

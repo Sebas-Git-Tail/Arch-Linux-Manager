@@ -1,4 +1,5 @@
 #include "PaginaRespaldo.h"
+#include "Tema.h"
 #include "ui_PaginaRespaldo.h"
 
 #include <QDateTime>
@@ -131,7 +132,7 @@ void PaginaRespaldo::empezar(bool forzar)
     if (!forzar) {
         contrasena = ui->editContrasena->text();
         if (contrasena.isEmpty()) {
-            ui->etiquetaEstado->setText(tr("Escribí la contraseña SSH del servidor."));
+            tema::mostrarEstado(ui->etiquetaEstado, tr("Escribí la contraseña SSH del servidor."));
             ui->editContrasena->setFocus();
             return;
         }
@@ -151,7 +152,7 @@ void PaginaRespaldo::empezar(bool forzar)
     ui->etiquetaArchivo->clear();
     ui->barraProgreso->setValue(0);
     ui->barraProgreso->show();
-    ui->etiquetaEstado->setText(tr("Buscando el servidor..."));
+    tema::mostrarEstado(ui->etiquetaEstado, tr("Buscando el servidor..."));
     habilitarFormulario(false);
 
     // Un QProcess nuevo por respaldo; se borra solo al terminar
@@ -178,7 +179,7 @@ void PaginaRespaldo::cancelar()
         return;
     cancelado = true;
     ::kill(-static_cast<pid_t>(proceso->processId()), SIGTERM);
-    ui->etiquetaEstado->setText(tr("Cancelando..."));
+    tema::mostrarEstado(ui->etiquetaEstado, tr("Cancelando..."));
 }
 
 void PaginaRespaldo::leerSalida()
@@ -194,7 +195,7 @@ void PaginaRespaldo::procesarEvento(const QString &linea)
     const QString resto = espacio < 0 ? QString() : linea.mid(espacio + 1);
 
     if (evento == u"ETAPA") {
-        ui->etiquetaEstado->setText(resto + QStringLiteral("..."));
+        tema::mostrarEstado(ui->etiquetaEstado, resto + QStringLiteral("..."));
         ui->barraProgreso->setValue(0);
     } else if (evento == u"ARCHIVO") {
         // El nombre se recorta por el medio para que entre en una línea
@@ -235,23 +236,23 @@ void PaginaRespaldo::terminoProceso(int codigo, QProcess::ExitStatus estado)
             empezar(true);
             return;
         }
-        ui->etiquetaEstado->setText(tr("Respaldo cancelado."));
+        tema::mostrarEstado(ui->etiquetaEstado, tr("Respaldo cancelado."));
     } else if (cancelado || estado == QProcess::CrashExit) {
-        ui->etiquetaEstado->setText(tr("Respaldo cancelado."));
+        tema::mostrarEstado(ui->etiquetaEstado, tr("Respaldo cancelado."));
     } else if (codigo == 0) {
         ui->barraProgreso->setValue(100);
-        ui->etiquetaEstado->setText(QStringLiteral("✓ ") + mensajeFinal);
+        tema::mostrarEstado(ui->etiquetaEstado, mensajeFinal, tema::Estado::Ok);
         emit respaldoTerminado();
     } else if (codigo == 6) {
         ui->barraProgreso->hide();
-        ui->etiquetaEstado->setText(QStringLiteral("✗ ") + mensajeFinal);
+        tema::mostrarEstado(ui->etiquetaEstado, mensajeFinal, tema::Estado::Error);
         QMessageBox::critical(this, windowTitle(), mensajeFinal);
     } else if (codigo == 3) {
         ui->barraProgreso->hide();
-        ui->etiquetaEstado->setText(tr("✗ Contraseña incorrecta, volvé a escribirla."));
+        tema::mostrarEstado(ui->etiquetaEstado, tr("Contraseña incorrecta, volvé a escribirla."), tema::Estado::Error);
         ui->editContrasena->setFocus();
     } else {
-        ui->etiquetaEstado->setText(QStringLiteral("✗ ") + (mensajeFinal.isEmpty() ? tr("El respaldo falló.") : mensajeFinal));
+        tema::mostrarEstado(ui->etiquetaEstado, (mensajeFinal.isEmpty() ? tr("El respaldo falló.") : mensajeFinal), tema::Estado::Error);
     }
     contrasena.clear();    // ya no hace falta en memoria
     cargarHistorial();

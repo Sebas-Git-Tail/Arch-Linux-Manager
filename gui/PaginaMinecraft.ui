@@ -62,6 +62,9 @@
        <layout class="QHBoxLayout" name="layoutAccionesServidor">
         <item>
          <widget class="QPushButton" name="botonIniciar">
+          <property name="primario" stdset="0">
+           <bool>true</bool>
+          </property>
           <property name="enabled">
            <bool>false</bool>
           </property>
@@ -75,6 +78,9 @@
         </item>
         <item>
          <widget class="QPushButton" name="botonDetener">
+          <property name="peligro" stdset="0">
+           <bool>true</bool>
+          </property>
           <property name="enabled">
            <bool>false</bool>
           </property>
@@ -142,6 +148,9 @@
         </item>
         <item>
          <widget class="QPushButton" name="botonReiniciarMundo">
+          <property name="peligro" stdset="0">
+           <bool>true</bool>
+          </property>
           <property name="enabled">
            <bool>false</bool>
           </property>

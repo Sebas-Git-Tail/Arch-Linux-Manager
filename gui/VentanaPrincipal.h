@@ -6,6 +6,7 @@
 #pragma once
 
 #include "Acciones.h"
+#include "Tema.h"
 
 #include <QMap>
 #include <QStringList>
@@ -16,6 +17,8 @@
 #include <functional>
 
 namespace Ui { class VentanaPrincipal; }
+
+class QLabel;
 
 class VentanaPrincipal : public QWidget
 {
@@ -40,13 +43,15 @@ private:
     QWidget *crearPaginaSeccion(const QList<Accion> &lista);
     void lanzar(const Accion &accion);
     void mostrarPagina(QWidget *pagina, const QString &titulo, bool conVolver);
-    void avisar(const QString &texto);
+    void avisar(const QString &texto, tema::Estado estado = tema::Estado::Neutro);
     void mostrarEstado();
     void armarMenuEquipo();
     void elegirEquipo(const QString &equipo);
     QProcessEnvironment entornoScripts() const;
 
     Ui::VentanaPrincipal *ui;
+    QLabel *chipEquipo;                        // abajo: qué computadora es
+    QLabel *chipServidor;                      // abajo: si el servidor responde
     QString base;
     Entorno entorno;
     QProcess procesoEntorno;

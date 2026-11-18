@@ -65,6 +65,9 @@
     <layout class="QHBoxLayout" name="layoutBotones">
      <item>
       <widget class="QPushButton" name="botonInstalarUltima">
+       <property name="primario" stdset="0">
+        <bool>true</bool>
+       </property>
        <property name="enabled">
         <bool>false</bool>
        </property>
