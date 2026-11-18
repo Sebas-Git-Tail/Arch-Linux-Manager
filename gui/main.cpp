@@ -8,6 +8,7 @@
 //   Arch-Linux-Manager-Qt --base ~/Escritorio/Manager/src/Resources
 
 #include "VentanaPrincipal.h"
+#include "Piezas.h"
 #include "Tema.h"
 #include "Traducciones.h"
 
@@ -75,6 +76,7 @@ int main(int argc, char *argv[])
         QApplication::setWindowIcon(QIcon(logo));
 
     VentanaPrincipal ventana(base);
+    tema::recordarVentana(&ventana);   // mismo tamaño (y maximizada o en pantalla completa) que la última vez
     ventana.show();
     return app.exec();
 }
