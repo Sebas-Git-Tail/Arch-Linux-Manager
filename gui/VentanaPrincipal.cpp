@@ -392,7 +392,7 @@ void VentanaPrincipal::lanzar(const Accion &accion)
         return;
     }
 
-    // Lo que necesita terminal (Actualizar Arch, App) y otros programas (Playit)
+    // Lo que necesita terminal (Actualizar Arch) y otros programas (Playit)
     QProcess proceso;
     proceso.setProcessEnvironment(entornoScripts());
     proceso.setWorkingDirectory(QDir::homePath());

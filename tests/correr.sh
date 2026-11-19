@@ -20,7 +20,7 @@ mal()  { pruebas=$((pruebas + 1)); fallas=$((fallas + 1)); printf '  ✗ %s\n' "
 igual() { if [[ "$2" == "$3" ]]; then ok "$1"; else mal "$1" "esperaba «$3», dio «$2»"; fi; }
 
 echo "Sintaxis"
-for s in "$RES"/Common/*.sh "$RES"/Logica/*.sh "$RES"/General/*.sh "$RES"/General/Android/*.sh "$RES"/Sebastian/Server/*.sh "$RAIZ"/Arch-Linux-Manager.sh; do
+for s in "$RES"/Common/*.sh "$RES"/Logica/*.sh "$RES"/General/*.sh "$RES"/General/Android/*.sh "$RAIZ"/Arch-Linux-Manager.sh; do
     if bash -n "$s" 2>/dev/null; then ok "bash -n $(basename "$s")"; else mal "bash -n $s"; fi
 done
 if command -v shellcheck &>/dev/null; then

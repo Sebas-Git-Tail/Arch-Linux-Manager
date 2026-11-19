@@ -19,6 +19,8 @@ QList<Accion> acciones()
     const auto conServidor = [](const Entorno &e) { return e.servidor; };
     // Minecraft: tu PC o la del instituto, con Prism Launcher (antes: Lista-Sebastian.sh)
     const auto minecraft = [](const Entorno &e) { return e.esSebastian() && e.tiene(QStringLiteral("prismlauncher")); };
+    // Sección Servidor: solo tus equipos (además, el servidor solo acepta las claves que autorizaste)
+    const auto soloSebastian = [](const Entorno &e) { return e.esSebastian() && e.servidor; };
 
     return {
         // ── General (antes: Lista-General.sh) ──
@@ -81,11 +83,17 @@ QList<Accion> acciones()
          {QStringLiteral("-e"), QStringLiteral("playit")},
          minecraft},
 
-        // ── Servidor (antes: Lista-Server.sh) ──
-        {QStringLiteral("servidor"), QStringLiteral("terminal"), QObject::tr("App"),
-         QObject::tr("Publica una versión nueva en tu repositorio de pacman del servidor (en una terminal)."),
-         TipoAccion::Terminal, QStringLiteral("Sebastian/Server/App.sh"), {},
-         [](const Entorno &e) { return e.esSebastian() && e.servidor; }},
+        // ── Servidor: acciones que corren en el servidor con la clave limitada de este equipo ──
+        // (Logica/Acciones-servidor.sh → ~/Repo/Scripts/acciones-servidor.sh del servidor)
+        {QStringLiteral("servidor"), QStringLiteral("video"), QObject::tr("Miniaturas de Bodrio"),
+         QObject::tr("Crea en el servidor las miniaturas que falten de los videos de Bodrio."),
+         TipoAccion::Logica, QStringLiteral("Logica/Acciones-servidor.sh"), {QStringLiteral("miniaturas-bodrio")}, soloSebastian},
+        {QStringLiteral("servidor"), QStringLiteral("descargar"), QObject::tr("Páginas de descargas"),
+         QObject::tr("Rehace las páginas de Música, Android y Minecraft del sitio con lo que haya en esas carpetas."),
+         TipoAccion::Logica, QStringLiteral("Logica/Acciones-servidor.sh"), {QStringLiteral("descargas")}, soloSebastian},
+        {QStringLiteral("servidor"), QStringLiteral("libro"), QObject::tr("Páginas del Instituto"),
+         QObject::tr("Rehace el índice de cada carpeta del Instituto en el sitio."),
+         TipoAccion::Logica, QStringLiteral("Logica/Acciones-servidor.sh"), {QStringLiteral("indices-instituto")}, soloSebastian},
 
         // ── Trabajo de Carina (antes: Lista-Mamá.sh) ──
         {QStringLiteral("carina"), QStringLiteral("maletin"), QObject::tr("Respaldo del trabajo"),
