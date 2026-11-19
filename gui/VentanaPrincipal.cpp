@@ -8,6 +8,7 @@
 #include "PaginaRespaldo.h"
 #include "PaginaSteam.h"
 #include "PaginaAndroid.h"
+#include "PaginaAUR.h"
 #include "PaginaMinecraft.h"
 #include "PaginaNotificacion.h"
 #include "PaginaTutoriales.h"
@@ -93,6 +94,8 @@ VentanaPrincipal::VentanaPrincipal(const QString &base, QWidget *parent)
     herramientas.insert(QStringLiteral("notificaciones"), new PaginaNotificacion(logica, this));
     // Actualizar el Manager (paquete del repositorio de la casa) e instalar las otras apps (comun/apps)
     herramientas.insert(QStringLiteral("apps"), new apps::PanelApps(QStringLiteral("Arch-Linux-Manager"), this));
+    // Apps del AUR (Claude, Equibop, Heroic, Linux Command Library), según el equipo
+    herramientas.insert(QStringLiteral("aur"), new PaginaAUR(base, this));
 
     for (QWidget *pagina : std::as_const(herramientas))
         ui->paginas->addWidget(pagina);

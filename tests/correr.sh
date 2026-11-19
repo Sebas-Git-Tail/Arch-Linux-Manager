@@ -181,6 +181,61 @@ igual "plugin que no está en Modrinth" "$(grep 'raro.jar' <<< "$plug" | cut -f5
 MC plugins-actualizar "26.3 SMP-1" "../../x.jar" > /dev/null; igual "plugins-actualizar rechaza rutas" "$?" "2"
 unset MINECRAFT_API_FALSA MINECRAFT_DIR
 
+echo "AUR.sh (pacman y AUR falsos: no toca la red ni instala nada)"
+falso="$TMP/bin"; mkdir -p "$falso"
+cat > "$falso/pacman" <<'SH'
+#!/bin/bash
+# pacman -Q falso: Claude viejo y Heroic al día
+case "$2" in
+    claude-desktop) echo "claude-desktop 4.4212.0-1" ;;
+    heroic-games-launcher-bin) echo "heroic-games-launcher-bin 2.22.4-1" ;;
+    *) exit 1 ;;
+esac
+SH
+chmod +x "$falso/pacman"
+export AUR_RPC_FALSA="$TMP/aur.json"
+cat > "$AUR_RPC_FALSA" <<'EOF2'
+{"version":5,"type":"multiinfo","resultcount":5,"results":[
+ {"Name":"claude-desktop","Version":"5.11492.5-1"},
+ {"Name":"equibop-bin","Version":"3.3.4-1"},
+ {"Name":"heroic-games-launcher-bin","Version":"2.22.4-1"},
+ {"Name":"lcl-gui-bin","Version":"4.9.2-1; rm -rf ~"},
+ {"Name":"otro-paquete","Version":"1.0-1"}]}
+EOF2
+AUR() { PATH="$falso:$PATH" bash "$LOGICA/AUR.sh" "$@"; }
+apps() { AUR estado | sed -n 's/^APP \([^\t]*\).*/\1/p' | tr '\n' ' '; }
+export MANAGER_MAC_PRUEBA="58:11:22:a9:df:de"
+igual "la PC de Sebastián ve las 5" "$(apps)" "claude-desktop equibop-bin heroic-games-launcher-bin lcl-gui-bin playit-bin "
+bash "$LOGICA/Entorno.sh" --equipo krocante >/dev/null
+igual "la tía ve solo Claude" "$(apps)" "claude-desktop "
+bash "$LOGICA/Entorno.sh" --equipo auto >/dev/null
+MANAGER_MAC_PRUEBA="18:c0:4d:a2:fe:e0"
+igual "mamá ve solo Claude" "$(apps)" "claude-desktop "
+MANAGER_MAC_PRUEBA="aa:bb:cc:dd:ee:ff"
+igual "otra PC ve todas menos Claude" "$(apps)" "equibop-bin heroic-games-launcher-bin lcl-gui-bin "
+MANAGER_MAC_PRUEBA="58:11:22:a9:df:de"
+estado=$(AUR estado)
+igual "informa la versión instalada" "$(grep -P '^APP claude-desktop\t' <<< "$estado" | cut -f4)" "4.4212.0-1"
+igual "Claude tiene versión nueva" "$(grep -P '^AUR claude-desktop\t' <<< "$estado" | cut -f2,3 | tr '\t' ' ')" "5.11492.5-1 NUEVA"
+igual "Heroic está al día" "$(grep -P '^AUR heroic' <<< "$estado" | cut -f3)" "AL_DIA"
+igual "Equibop no está instalado" "$(grep -P '^AUR equibop' <<< "$estado" | cut -f3)" "NO_INSTALADA"
+grep -q '^AUR lcl-gui-bin' <<< "$estado" && mal "acepta una versión con comandos" || ok "ignora una versión con comandos"
+grep -q 'otro-paquete' <<< "$estado" && mal "muestra un paquete que no pidió" || ok "ignora paquetes que no pidió"
+igual "pendientes: solo las instaladas con versión nueva" "$(AUR pendientes | tr '\n' ' ')" "PENDIENTE claude-desktop "
+AUR pendientes > /dev/null; igual "pendientes sale con 0 aunque la última esté al día" "$?" "0"
+AUR estado > /dev/null; igual "estado sale con 0" "$?" "0"
+echo 'no es json' > "$AUR_RPC_FALSA"
+AUR estado > /dev/null; igual "sin respuesta del AUR sale con 1" "$?" "1"
+AUR cualquiera > /dev/null; igual "uso desconocido sale con 2" "$?" "2"
+instalar() { PATH="$falso:$PATH" bash "$RES/General/AUR-instalar.sh" --sin-pausa "$@" < /dev/null > /dev/null 2>&1; }
+instalar yay; igual "AUR-instalar rechaza un paquete que no es de la lista" "$?" "2"
+MANAGER_MAC_PRUEBA="18:c0:4d:a2:fe:e0"
+instalar equibop-bin; igual "en la PC de mamá rechaza Equibop" "$?" "2"
+MANAGER_MAC_PRUEBA="aa:bb:cc:dd:ee:ff"
+instalar playit-bin; igual "en otra PC rechaza Playit" "$?" "2"
+instalar; igual "AUR-instalar sin paquetes sale con 2" "$?" "2"
+unset MANAGER_MAC_PRUEBA AUR_RPC_FALSA
+
 echo
 if (( fallas == 0 )); then
     echo "Todas bien ($pruebas pruebas)."

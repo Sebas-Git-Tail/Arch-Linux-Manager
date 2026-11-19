@@ -30,6 +30,10 @@ QList<Accion> acciones()
         {QStringLiteral("general"), QStringLiteral("paquete"), QObject::tr("Apps y actualizaciones"),
          QObject::tr("Actualiza el Manager e instala los otros programas de Sebastián."),
          TipoAccion::Pagina, QStringLiteral("apps"), {}, siempre},
+        // Cuáles apps ve cada equipo lo decide Common/AUR.sh (en todos hay al menos una)
+        {QStringLiteral("general"), QStringLiteral("apps"), QObject::tr("Apps del AUR"),
+         QObject::tr("Instala y actualiza apps que no están en los repositorios de Arch."),
+         TipoAccion::Pagina, QStringLiteral("aur"), {}, siempre},
         {QStringLiteral("general"), QStringLiteral("respaldo"), QObject::tr("Respaldo-Linux"),
          QObject::tr("Copia tu carpeta personal al servidor."),
          TipoAccion::Pagina, QStringLiteral("respaldo-linux"), {}, conServidor},

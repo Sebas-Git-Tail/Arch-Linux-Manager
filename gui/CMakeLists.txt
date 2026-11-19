@@ -36,6 +36,7 @@ add_executable(Arch-Linux-Manager-Qt
     PaginaMinecraft.cpp PaginaMinecraft.h PaginaMinecraft.ui
     PaginaTutoriales.cpp PaginaTutoriales.h PaginaTutoriales.ui
     PaginaNotificacion.cpp PaginaNotificacion.h PaginaNotificacion.ui
+    PaginaAUR.cpp PaginaAUR.h
     ProcesoLogica.cpp ProcesoLogica.h
 )
 target_link_libraries(Arch-Linux-Manager-Qt PRIVATE Qt6::Widgets comun_descargas comun_apps_widgets comun_ui)
