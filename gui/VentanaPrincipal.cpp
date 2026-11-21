@@ -1,5 +1,7 @@
 #include "VentanaPrincipal.h"
+#include "Novedades.h"
 #include "PanelApps.h"
+#include "VentanaNovedades.h"
 #include "Piezas.h"
 #include "Tema.h"
 #include "ui_VentanaPrincipal.h"
@@ -51,6 +53,7 @@ VentanaPrincipal::VentanaPrincipal(const QString &base, QWidget *parent)
     ui->layoutEstado->insertWidget(0, chipEquipo);
     ui->layoutEstado->insertWidget(1, chipServidor);
     ui->layoutEstado->setSpacing(8);
+    ui->layoutEncabezado->addWidget(soporte::botonNovedades(this));   // novedades e informe de fallas
     ui->layoutEncabezado->addWidget(tema::botonModo(this));   // modo claro / oscuro (se recuerda)
 
     // Las páginas de herramientas se crean una sola vez (así una descarga sigue aunque
@@ -110,6 +113,7 @@ VentanaPrincipal::VentanaPrincipal(const QString &base, QWidget *parent)
     comprobarEntorno();
     // Una vez por día: si hay una versión nueva del Manager, pregunta y la instala (pkexec pacman -U)
     QTimer::singleShot(3000, this, [this] { apps::avisarActualizaciones(this, QStringLiteral("Arch-Linux-Manager")); });
+    soporte::novedadesAlAbrir(this);    // la primera vez que se abre una versión nueva: qué cambió
 }
 
 VentanaPrincipal::~VentanaPrincipal()
@@ -187,6 +191,11 @@ void VentanaPrincipal::terminoEntorno(int codigo, QProcess::ExitStatus estado)
             nuevo.puedeElegirEquipo = partes.value(1) == u"SI";
     }
     entorno = nuevo;
+    // En la PC y la del instituto, las apps muestran también las novedades que solo le afectan a Sebastián
+    if (entorno.esSebastian() && !soporte::esDesarrollador()) {
+        soporte::ponerDesarrollador(true);
+        soporte::novedades()->recargar();
+    }
 
     construirSecciones();
     mostrarEstado();

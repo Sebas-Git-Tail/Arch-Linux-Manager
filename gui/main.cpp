@@ -8,6 +8,7 @@
 //   Arch-Linux-Manager-Qt --base ~/Escritorio/Manager/src/Resources
 
 #include "VentanaPrincipal.h"
+#include "Fallas.h"
 #include "Piezas.h"
 #include "Tema.h"
 #include "Traducciones.h"
@@ -54,6 +55,8 @@ int main(int argc, char *argv[])
         caja.exec();
         return 0;
     }
+
+    soporte::iniciarFallas();       // si el Manager se cierra por una falla, manda un informe (comun/soporte)
 
     QString base = opciones.value(opcionBase);
     if (base.isEmpty())

@@ -41,5 +41,6 @@ add_executable(Arch-Linux-Manager-Qt
 )
 target_link_libraries(Arch-Linux-Manager-Qt PRIVATE Qt6::Widgets comun_descargas comun_apps_widgets comun_ui)
 target_compile_definitions(Arch-Linux-Manager-Qt PRIVATE VERSION_PROGRAMA="${VERSION_PROGRAMA}")
+comun_novedades(Arch-Linux-Manager-Qt ${CMAKE_CURRENT_SOURCE_DIR}/../NOVEDADES.md)   # qué cambió en cada versión
 
 install(TARGETS Arch-Linux-Manager-Qt RUNTIME DESTINATION bin)
