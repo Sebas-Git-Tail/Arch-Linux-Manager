@@ -12,6 +12,9 @@
   minecraft_api.py buscar VERSION TEXTO
       Un plugin de Modrinth por nombre, slug o URL (modrinth.com/plugin/<slug>), compatible con la versión:
       «ENCONTRADO <slug>\t<nombre>\t<versión>\t<url>\t<sha512>\t<archivo>» o nada
+  minecraft_api.py ping PUERTO
+      Quién está conectado al servidor de este equipo (Server List Ping a 127.0.0.1, no usa internet ni
+      escribe nada en la consola del servidor): «JUGADORES <conectados>\t<máximo>\t<nombre,nombre…>»
 
 Para las pruebas: MINECRAFT_API_FALSA=<carpeta> lee las respuestas de archivos de esa carpeta en vez de
 ir a internet (ver tests/correr.sh).
@@ -20,6 +23,8 @@ import hashlib
 import json
 import os
 import re
+import socket
+import struct
 import sys
 import urllib.parse
 import urllib.request
@@ -167,6 +172,63 @@ def buscar(version_mc, texto):
     return 1
 
 
+def varint(n):
+    n &= 0xFFFFFFFF
+    salida = b""
+    while True:
+        b = n & 0x7F
+        n >>= 7
+        salida += bytes([b | (0x80 if n else 0)])
+        if not n:
+            return salida
+
+
+def leer_varint(s):
+    n = 0
+    for i in range(5):
+        b = s.recv(1)
+        if not b:
+            raise OSError("el servidor cortó la conexión")
+        n |= (b[0] & 0x7F) << (7 * i)
+        if not b[0] & 0x80:
+            return n
+    raise ValueError("varint demasiado largo")
+
+
+def ping(puerto):
+    """Server List Ping (el de la lista de servidores del juego) al servidor local."""
+    puerto = int(puerto)
+    if not 0 < puerto < 65536:
+        raise ValueError("puerto fuera de rango")
+    with socket.create_connection(("127.0.0.1", puerto), timeout=4) as s:
+        host = b"127.0.0.1"
+        datos = varint(0) + varint(-1) + varint(len(host)) + host + struct.pack(">H", puerto) + varint(1)
+        s.sendall(varint(len(datos)) + datos + varint(1) + varint(0))
+        largo = leer_varint(s)
+        if largo > 1 << 20:
+            raise ValueError("respuesta demasiado grande")
+        cuerpo = b""
+        while len(cuerpo) < largo:
+            parte = s.recv(largo - len(cuerpo))
+            if not parte:
+                raise OSError("respuesta incompleta")
+            cuerpo += parte
+    # paquete 0: varint id + varint largo + JSON
+    i = 0
+    while cuerpo[i] & 0x80:
+        i += 1
+    i += 1
+    while cuerpo[i] & 0x80:
+        i += 1
+    i += 1
+    estado = json.loads(cuerpo[i:].decode("utf-8", "replace"))
+    jugadores = estado.get("players") or {}
+    nombres = [limpiar(j.get("name", "")).replace(",", " ") for j in jugadores.get("sample") or []]
+    nombres = [n for n in nombres if n and n != "Anonymous Player"]
+    print(f"JUGADORES {int(jugadores.get('online', 0))}\t{int(jugadores.get('max', 0))}\t{','.join(nombres)}")
+    return 0
+
+
 def main(args):
     if len(args) >= 2 and args[0] == "paper":
         return paper(args[1])
@@ -174,6 +236,8 @@ def main(args):
         return plugins(args[1], args[2:])
     if len(args) >= 3 and args[0] == "buscar":
         return buscar(args[1], " ".join(args[2:]))
+    if len(args) == 2 and args[0] == "ping":
+        return ping(args[1])
     print(__doc__, file=sys.stderr)
     return 2
 

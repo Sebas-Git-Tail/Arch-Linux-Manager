@@ -137,6 +137,7 @@ printf 'level-name=world\n' > "$S/26.3 SMP-1/server.properties"
 echo datos > "$S/26.3 SMP-1/world/region/r.0.0.mca"
 printf 'TIPO=forge\nVERSION=26.2\nRAM=6G\n' > "$S/26.2 Forge/servidor.conf"
 MC() { bash "$LOGICA/Minecraft.sh" "$@" 2>&1; }
+falso_java="$TMP/java-falso"; mkdir -p "$falso_java"
 lista=$(MC servidores)
 igual "lista solo las carpetas con servidor.conf" "$(grep -c '^SERVIDOR ' <<< "$lista")" "2"
 igual "ordena por versión" "$(grep '^SERVIDOR ' <<< "$lista" | cut -f2 | tr '\n' '|')" "26.2 Forge|26.3 SMP-1|"
@@ -179,7 +180,69 @@ igual "plugin con versión nueva" "$(grep 'viejo.jar' <<< "$plug" | cut -f2,3,4,
 igual "plugin al día" "$(grep 'actual.jar' <<< "$plug" | cut -f5)" "AL_DIA"
 igual "plugin que no está en Modrinth" "$(grep 'raro.jar' <<< "$plug" | cut -f5)" "DESCONOCIDO"
 MC plugins-actualizar "26.3 SMP-1" "../../x.jar" > /dev/null; igual "plugins-actualizar rechaza rutas" "$?" "2"
-unset MINECRAFT_API_FALSA MINECRAFT_DIR
+unset MINECRAFT_API_FALSA
+# Consola compartida: un «java» falso que anota lo que recibe y se apaga con «stop», dentro de un tmux
+# con socket propio de la prueba (no toca el de los servidores reales) y sin abrir terminales
+MC comando "26.3 SMP-1" "say hola" > /dev/null; igual "comando rechaza un servidor apagado" "$?" "1"
+MC comando "26.3 SMP-1" $'say a\nstop' > /dev/null; igual "comando rechaza saltos de línea" "$?" "2"
+MC comando "26.3 SMP-1" "   " > /dev/null; igual "comando rechaza uno vacío" "$?" "2"
+MC detener "26.3 SMP-1" "5; rm" > /dev/null; igual "detener rechaza segundos raros" "$?" "2"
+if command -v tmux > /dev/null; then
+    cat > "$falso_java/java" <<'SH'
+#!/bin/bash
+mkdir -p logs; echo "[INFO]: Done (args $*)" > logs/latest.log
+while IFS= read -r l; do echo "[INFO]: recibido: $l" >> logs/latest.log; [[ $l == stop ]] && exit 0; done
+SH
+    chmod +x "$falso_java/java"
+    touch "$S/26.3 SMP-1/paper-26.3-244.jar"
+    export MINECRAFT_TMUX="prueba-manager-$$" MINECRAFT_SIN_TERMINAL=1
+    PATH="$falso_java:$PATH" MC iniciar "26.3 SMP-1" > /dev/null
+    for _ in 1 2 3 4 5 6 7 8 9 10; do grep -q Done "$S/26.3 SMP-1/logs/latest.log" 2>/dev/null && break; sleep 0.3; done
+    tmux -L "$MINECRAFT_TMUX" has-session -t "=mc-26_3_SMP-1" 2>/dev/null && ok "iniciar lo prende dentro de tmux (sesión mc-26_3_SMP-1)" || mal "iniciar en tmux"
+    grep -q 'Done (args -Xms1G -Xmx12G -jar paper-26.3-244.jar nogui)' "$S/26.3 SMP-1/logs/latest.log" && ok "arranca java con la RAM y el jar" || mal "argumentos de java"
+    MC comando "26.3 SMP-1" "/say hola \"amigos\" \$(id)" > /dev/null; sleep 0.5
+    grep -qF 'recibido: say hola "amigos" $(id)' "$S/26.3 SMP-1/logs/latest.log" && ok "comando llega tal cual (sin «/» y sin interpretar)" || mal "comando llega tal cual"
+    reg=$(timeout 2 bash "$LOGICA/Minecraft.sh" registro "26.3 SMP-1")
+    igual "registro dice que acepta comandos" "$(head -1 <<< "$reg")" "CONSOLA COMANDOS"
+    grep -q '^LINEA \[INFO\]: recibido: say hola' <<< "$reg" && ok "registro muestra las líneas" || mal "registro" "$reg"
+    salida=$(MC detener "26.3 SMP-1" 2)
+    grep -q 'recibido: say El servidor se apaga en 2 segundos.' "$S/26.3 SMP-1/logs/latest.log" && ok "detener avisa en el chat" || mal "detener avisa en el chat"
+    grep -q 'recibido: stop' "$S/26.3 SMP-1/logs/latest.log" && ok "detener manda «stop»" || mal "detener manda stop"
+    grep -q '^SERVIDOR APAGADO' <<< "$(MC servidores)" && ok "queda apagado" || mal "queda apagado" "$salida"
+    # Cancelar mientras avisa: no se apaga y lo dice en el chat
+    PATH="$falso_java:$PATH" MC iniciar "26.3 SMP-1" > /dev/null; sleep 1
+    bash "$LOGICA/Minecraft.sh" detener "26.3 SMP-1" 30 > /dev/null & espera=$!
+    sleep 1.5; kill -TERM "$espera"; wait "$espera" 2>/dev/null; sleep 0.5
+    grep -q 'recibido: say Se canceló: el servidor no se apaga.' "$S/26.3 SMP-1/logs/latest.log" && ok "cancelar el aviso lo avisa" || mal "cancelar el aviso"
+    grep -q '^SERVIDOR ENCENDIDO' <<< "$(MC servidores)" && ok "cancelar el aviso no lo apaga" || mal "cancelar el aviso no lo apaga"
+    MC detener "26.3 SMP-1" > /dev/null
+    tmux -L "$MINECRAFT_TMUX" kill-server 2>/dev/null
+    unset MINECRAFT_TMUX MINECRAFT_SIN_TERMINAL
+else
+    echo "  (sin tmux: se saltean las pruebas de la consola compartida)"
+fi
+# jugadores: Server List Ping contra un servidor falso
+puerto=$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",0)); print(s.getsockname()[1])')
+python3 - "$puerto" <<'PY2' &
+import json, socket, sys
+def varint(n):
+    o = b""
+    while True:
+        b = n & 0x7F; n >>= 7
+        o += bytes([b | (0x80 if n else 0)])
+        if not n: return o
+srv = socket.socket(); srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+srv.bind(("127.0.0.1", int(sys.argv[1]))); srv.listen(1); srv.settimeout(10)
+c, _ = srv.accept(); c.recv(1024)
+j = json.dumps({"players": {"online": 2, "max": 20, "sample": [{"name": "Steve"}, {"name": ".Alex"}]}}).encode()
+cuerpo = varint(0) + varint(len(j)) + j
+c.sendall(varint(len(cuerpo)) + cuerpo); c.close()
+PY2
+ping_falso=$!; sleep 0.5
+igual "ping lee conectados, máximo y nombres" "$(python3 -I "$LOGICA/minecraft_api.py" ping "$puerto")" "$(printf 'JUGADORES 2\t20\tSteve,.Alex')"
+wait "$ping_falso" 2>/dev/null
+python3 -I "$LOGICA/minecraft_api.py" ping 99999 2>/dev/null; igual "ping rechaza un puerto fuera de rango" "$?" "1"
+unset MINECRAFT_DIR
 
 echo "AUR.sh (pacman y AUR falsos: no toca la red ni instala nada)"
 falso="$TMP/bin"; mkdir -p "$falso"

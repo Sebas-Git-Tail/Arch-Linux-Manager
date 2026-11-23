@@ -3,6 +3,13 @@
 Lo que cambió en cada versión. El Manager lo muestra la primera vez que se abre una versión nueva y siempre
 desde el botón del regalito. Los cambios marcados [Sebastián] solo aparecen en sus equipos.
 
+## 4.12.0 (23/11/2026)
+- Panel de Minecraft: pestaña «Consola» con lo que va pasando en el servidor elegido, quién está conectado
+  y una caja para mandarle comandos (con las flechas volvés a los anteriores). Los plugins pasaron a su pestaña.
+- Los servidores siguen prendidos aunque cierres su terminal o el Manager. Para apagarlos: Detener (o «stop»).
+  «Abrir en una terminal» vuelve a mostrar la consola.
+- Si hay gente conectada, Detener y Reiniciar ofrecen avisar en el chat y esperar un minuto (se puede cancelar).
+
 ## 4.11.0 (21/11/2026)
 - Novedades: la primera vez que abrís una versión nueva te cuenta qué cambió. Siempre están en el botón del
   regalito, arriba a la derecha.

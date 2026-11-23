@@ -4,11 +4,15 @@
 
 #include <QDate>
 #include <QDir>
+#include <QFontDatabase>
 #include <QHeaderView>
 #include <QInputDialog>
+#include <QKeyEvent>
 #include <QLocale>
 #include <QMessageBox>
+#include <QPushButton>
 #include <QRegularExpression>
+#include <QScrollBar>
 #include <QTimer>
 
 // Datos de cada fila de la lista de servidores (en la columna 0)
@@ -23,6 +27,12 @@ PaginaMinecraft::PaginaMinecraft(const QString &logica, QWidget *parent)
 {
     ui->setupUi(this);
     ui->barraProgreso->hide();
+    ui->botonCancelar->hide();
+    ui->textoConsola->setFont(QFontDatabase::systemFont(QFontDatabase::FixedFont));
+    ui->editComando->installEventFilter(this);
+    ui->editComando->setProperty("ayuda", ui->editComando->placeholderText());
+    temporizadorJugadores.setInterval(10000);
+    connect(&temporizadorJugadores, &QTimer::timeout, this, &PaginaMinecraft::consultarJugadores);
     ui->arbolServidores->header()->setSectionResizeMode(0, QHeaderView::Stretch);
     for (int c = 1; c < ui->arbolServidores->columnCount(); ++c)
         ui->arbolServidores->header()->setSectionResizeMode(c, QHeaderView::ResizeToContents);
@@ -35,6 +45,8 @@ PaginaMinecraft::PaginaMinecraft(const QString &logica, QWidget *parent)
         actualizarBotones();
         if (elegido != pluginsDe)
             consultarPlugins();
+        if (elegido != consolaDe)
+            verConsola();
     });
     connect(ui->arbolServidores, &QTreeWidget::itemChanged, this, [this](QTreeWidgetItem *item, int columna) {
         if (columna != 0)
@@ -58,6 +70,10 @@ PaginaMinecraft::PaginaMinecraft(const QString &logica, QWidget *parent)
     connect(ui->botonPlugin, &QPushButton::clicked, this, &PaginaMinecraft::instalarPlugin);
     connect(ui->editPlugin, &QLineEdit::returnPressed, this, &PaginaMinecraft::instalarPlugin);
     connect(ui->botonJugar, &QPushButton::clicked, this, &PaginaMinecraft::jugar);
+    connect(ui->botonEnviar, &QPushButton::clicked, this, &PaginaMinecraft::enviarComando);
+    connect(ui->editComando, &QLineEdit::returnPressed, this, &PaginaMinecraft::enviarComando);
+    connect(ui->botonTerminal, &QPushButton::clicked, this, &PaginaMinecraft::abrirTerminal);
+    connect(ui->botonCancelar, &QPushButton::clicked, &accion, &ProcesoLogica::cancelar);
 
     connect(&consulta, &ProcesoLogica::evento, this, &PaginaMinecraft::eventoConsulta);
     connect(&consulta, &ProcesoLogica::terminado, this, &PaginaMinecraft::terminoConsulta);
@@ -70,14 +86,29 @@ PaginaMinecraft::PaginaMinecraft(const QString &logica, QWidget *parent)
         ui->grupoPlugins->setTitle(pluginsNuevos > 0
             ? tr("Plugins de %1: %2 con versión nueva").arg(pluginsDe).arg(pluginsNuevos)
             : tr("Plugins de %1").arg(pluginsDe));
+        ui->pestanasServidor->setTabText(ui->pestanasServidor->indexOf(ui->pestanaPlugins),
+            pluginsNuevos > 0 ? tr("Plugins (%1 con versión nueva)").arg(pluginsNuevos) : tr("Plugins"));
         actualizarBotones();
     });
     connect(&accion, &ProcesoLogica::evento, this, &PaginaMinecraft::eventoAccion);
     connect(&accion, &ProcesoLogica::terminado, this, &PaginaMinecraft::terminoAccion);
+    connect(&registro, &ProcesoLogica::evento, this, &PaginaMinecraft::eventoRegistro);
+    connect(&conectados, &ProcesoLogica::evento, this, &PaginaMinecraft::eventoJugadores);
+    connect(&envio, &ProcesoLogica::evento, this, [this](const QString &palabra, const QString &resto) {
+        if (palabra == u"ERROR")
+            tema::mostrarEstado(ui->etiquetaEstado, resto, tema::Estado::Error);
+        else if (palabra == u"LISTO" && !resto.startsWith(u"Enviado"))
+            tema::mostrarEstado(ui->etiquetaEstado, resto, tema::Estado::Ok);
+    });
+    connect(&envio, &ProcesoLogica::terminado, this, [this] { actualizarBotones(); });
 }
 
 PaginaMinecraft::~PaginaMinecraft()
 {
+    // tail -F no termina solo: se corta todo su grupo de procesos
+    registro.cancelarYEsperar();
+    conectados.cancelarYEsperar();
+    envio.cancelarYEsperar();
     delete ui;
 }
 
@@ -86,6 +117,119 @@ void PaginaMinecraft::showEvent(QShowEvent *evento)
 {
     QWidget::showEvent(evento);
     consultar();
+    if (!registro.ocupado())
+        verConsola();
+    temporizadorJugadores.start();
+}
+
+// Fuera de la página no se sigue leyendo el registro ni preguntando quién está
+void PaginaMinecraft::hideEvent(QHideEvent *evento)
+{
+    QWidget::hideEvent(evento);
+    temporizadorJugadores.stop();
+    registro.cancelar();
+    conectados.cancelar();
+    consolaDe.clear();
+}
+
+bool PaginaMinecraft::eventFilter(QObject *objeto, QEvent *evento)
+{
+    if (objeto == ui->editComando && evento->type() == QEvent::KeyPress && !historial.isEmpty()) {
+        const int tecla = static_cast<QKeyEvent *>(evento)->key();
+        if (tecla == Qt::Key_Up || tecla == Qt::Key_Down) {
+            posHistorial = qBound(0, posHistorial + (tecla == Qt::Key_Up ? -1 : 1), int(historial.size()));
+            ui->editComando->setText(posHistorial < historial.size() ? historial.at(posHistorial) : QString());
+            return true;
+        }
+    }
+    return QWidget::eventFilter(objeto, evento);
+}
+
+// --- Consola -----------------------------------------------------------------------------------
+
+void PaginaMinecraft::verConsola()
+{
+    registro.cancelarYEsperar();
+    ui->textoConsola->clear();
+    consola = Consola::Nada;
+    jugadoresConectados = 0;
+    consolaDe = servidorElegido(&consolaEncendido);
+    if (consolaDe.isEmpty()) {
+        ui->etiquetaJugadores->setText(tr("Elegí un servidor para ver su consola."));
+    } else if (isVisible()) {
+        ui->etiquetaJugadores->setText(consolaEncendido ? tr("Consultando quién está conectado…")
+                                                        : tr("%1 está apagado: se ve lo último que registró.").arg(consolaDe));
+        registro.iniciar(script, {QStringLiteral("registro"), consolaDe});
+        consultarJugadores();
+    }
+    actualizarBotones();
+}
+
+void PaginaMinecraft::eventoRegistro(const QString &palabra, const QString &resto)
+{
+    if (palabra == u"LINEA") {
+        QScrollBar *barra = ui->textoConsola->verticalScrollBar();
+        const bool alFinal = barra->value() >= barra->maximum() - 4;    // si subió a leer, no se lo mueve
+        ui->textoConsola->appendPlainText(resto);
+        if (alFinal)
+            barra->setValue(barra->maximum());
+    } else if (palabra == u"CONSOLA") {
+        consola = resto == u"COMANDOS" ? Consola::Comandos
+                : resto == u"SOLO_LECTURA" ? Consola::SoloLectura : Consola::Apagado;
+        actualizarBotones();
+    }
+}
+
+void PaginaMinecraft::consultarJugadores()
+{
+    if (!isVisible() || consolaDe.isEmpty() || !consolaEncendido || conectados.ocupado())
+        return;
+    conectados.iniciar(script, {QStringLiteral("jugadores"), consolaDe});
+}
+
+void PaginaMinecraft::eventoJugadores(const QString &palabra, const QString &resto)
+{
+    if (palabra == u"AVISO") {
+        ui->etiquetaJugadores->setText(resto);
+        return;
+    }
+    if (palabra != u"JUGADORES")
+        return;
+    // JUGADORES conectados<tab>máximo<tab>nombre,nombre…
+    const QStringList c = resto.split(u'\t');
+    if (c.size() < 3)
+        return;
+    jugadoresConectados = c.at(0).toInt();
+    const QStringList nombres = c.at(2).split(u',', Qt::SkipEmptyParts);
+    if (jugadoresConectados == 0) {
+        ui->etiquetaJugadores->setText(tr("Nadie conectado (entran hasta %1).").arg(c.at(1)));
+        return;
+    }
+    QString lista = nombres.join(QStringLiteral(", "));
+    if (nombres.size() < jugadoresConectados)
+        lista += (lista.isEmpty() ? QString() : QStringLiteral(" ")) + tr("y %1 más").arg(jugadoresConectados - nombres.size());
+    ui->etiquetaJugadores->setText(tr("Conectados (%1 de %2): %3").arg(jugadoresConectados).arg(c.at(1), lista));
+}
+
+void PaginaMinecraft::enviarComando()
+{
+    const QString texto = ui->editComando->text().trimmed();
+    if (texto.isEmpty() || envio.ocupado() || consola != Consola::Comandos)
+        return;
+    if (historial.isEmpty() || historial.constLast() != texto)
+        historial << texto;
+    posHistorial = historial.size();
+    ui->editComando->clear();
+    envio.iniciar(script, {QStringLiteral("comando"), consolaDe, texto});
+    actualizarBotones();
+}
+
+void PaginaMinecraft::abrirTerminal()
+{
+    if (envio.ocupado() || consolaDe.isEmpty())
+        return;
+    envio.iniciar(script, {QStringLiteral("terminal"), consolaDe});
+    actualizarBotones();
 }
 
 void PaginaMinecraft::consultar()
@@ -138,6 +282,13 @@ void PaginaMinecraft::eventoConsulta(const QString &palabra, const QString &rest
 // programa está abierto)
 void PaginaMinecraft::terminoConsulta()
 {
+    // Si el elegido se prendió o se apagó, la consola vuelve a empezar (cambia si acepta comandos)
+    if (paso == Paso::Servidores && isVisible()) {
+        bool encendido = false;
+        const QString servidor = servidorElegido(&encendido);
+        if (servidor != consolaDe || encendido != consolaEncendido)
+            verConsola();
+    }
     if (paso == Paso::Servidores && primeraVez) {
         paso = Paso::Instancias;
         consulta.iniciar(script, {QStringLiteral("instancias")});
@@ -228,6 +379,16 @@ void PaginaMinecraft::actualizarBotones()
                                            && pluginsDe == servidorElegido());
     ui->botonPlugin->setEnabled(libre);
     ui->grupoPrism->setEnabled(libre && ui->comboInstancia->count() > 0);
+
+    const bool comandos = consola == Consola::Comandos;
+    ui->editComando->setEnabled(comandos);
+    ui->botonEnviar->setEnabled(comandos && !envio.ocupado());
+    ui->botonTerminal->setEnabled(comandos && !envio.ocupado());
+    ui->editComando->setPlaceholderText(
+        comandos ? ui->editComando->property("ayuda").toString()
+        : consola == Consola::SoloLectura ? tr("Se prendió sin consola compartida: reinicialo desde el panel para mandarle comandos")
+        : consola == Consola::Apagado ? tr("Apagado: no recibe comandos")
+        : QString());
 }
 
 void PaginaMinecraft::ejecutar(const QStringList &argumentos, const QString &estado)
@@ -237,6 +398,7 @@ void PaginaMinecraft::ejecutar(const QStringList &argumentos, const QString &est
     ui->barraProgreso->setRange(0, 0);    // sin porcentaje: barra «ocupada»
     ui->barraProgreso->show();
     accion.iniciar(script, argumentos);
+    ui->botonCancelar->setVisible(cancelable);
     actualizarBotones();
 }
 
@@ -247,22 +409,44 @@ void PaginaMinecraft::iniciar()
 
 void PaginaMinecraft::detener()
 {
-    const QString servidor = servidorElegido();
-    if (QMessageBox::question(this, windowTitle(),
-            tr("Se va a apagar %1 guardando los mundos (los jugadores se desconectan). ¿Continuar?").arg(servidor))
-        != QMessageBox::Yes)
-        return;
-    ejecutar({QStringLiteral("detener"), servidor}, tr("Deteniendo %1…").arg(servidor));
+    detenerOReiniciar(false);
 }
 
 void PaginaMinecraft::reiniciar()
 {
+    detenerOReiniciar(true);
+}
+
+// Si hay gente conectada (y se le pueden mandar comandos) ofrece avisar en el chat y esperar un minuto
+void PaginaMinecraft::detenerOReiniciar(bool reinicio)
+{
     const QString servidor = servidorElegido();
-    if (QMessageBox::question(this, windowTitle(),
-            tr("Se va a detener %1 guardando los mundos (los jugadores se desconectan) y se va a "
-               "volver a abrir. ¿Continuar?").arg(servidor)) != QMessageBox::Yes)
+    int segundos = 0;
+    if (jugadoresConectados > 0 && consola == Consola::Comandos && consolaDe == servidor) {
+        QMessageBox caja(QMessageBox::Question, windowTitle(),
+            (jugadoresConectados == 1 ? tr("Hay 1 jugador en %1.").arg(servidor)
+                                      : tr("Hay %1 jugadores en %2.").arg(jugadoresConectados).arg(servidor))
+                + u' ' + (reinicio ? tr("Se va a reiniciar guardando los mundos.") : tr("Se va a apagar guardando los mundos.")),
+            QMessageBox::Cancel, this);
+        caja.setInformativeText(tr("Con el aviso, el chat cuenta los segundos y se puede cancelar mientras tanto."));
+        QPushButton *avisar = caja.addButton(tr("Avisar y esperar 1 minuto"), QMessageBox::AcceptRole);
+        QPushButton *ya = caja.addButton(reinicio ? tr("Reiniciar ya") : tr("Apagar ya"), QMessageBox::DestructiveRole);
+        caja.setDefaultButton(avisar);
+        caja.exec();
+        if (caja.clickedButton() == avisar)
+            segundos = 60;
+        else if (caja.clickedButton() != ya)
+            return;
+    } else if (QMessageBox::question(this, windowTitle(),
+                   reinicio ? tr("Se va a detener %1 guardando los mundos (los jugadores se desconectan) y se va a "
+                                 "volver a abrir. ¿Continuar?").arg(servidor)
+                            : tr("Se va a apagar %1 guardando los mundos (los jugadores se desconectan). ¿Continuar?")
+                                  .arg(servidor)) != QMessageBox::Yes) {
         return;
-    ejecutar({QStringLiteral("reiniciar"), servidor}, tr("Reiniciando %1…").arg(servidor));
+    }
+    cancelable = segundos > 0;
+    ejecutar({reinicio ? QStringLiteral("reiniciar") : QStringLiteral("detener"), servidor, QString::number(segundos)},
+             reinicio ? tr("Reiniciando %1…").arg(servidor) : tr("Deteniendo %1…").arg(servidor));
 }
 
 void PaginaMinecraft::actualizarPaper()
@@ -366,7 +550,10 @@ void PaginaMinecraft::eventoAccion(const QString &palabra, const QString &resto)
 void PaginaMinecraft::terminoAccion(int codigo, bool cancelado)
 {
     ui->barraProgreso->hide();
-    if (cancelado)
+    ui->botonCancelar->hide();
+    if (cancelado && cancelable)
+        tema::mostrarEstado(ui->etiquetaEstado, tr("Cancelado: el servidor sigue prendido (se avisó en el chat)."));
+    else if (cancelado)
         tema::mostrarEstado(ui->etiquetaEstado, tr("Cancelado."));
     else if (codigo == 0)
         tema::mostrarEstado(ui->etiquetaEstado, mensajeFinal, tema::Estado::Ok);
@@ -374,6 +561,7 @@ void PaginaMinecraft::terminoAccion(int codigo, bool cancelado)
         tema::mostrarEstado(ui->etiquetaEstado, (mensajeFinal.isEmpty() ? tr("No se pudo completar.") : mensajeFinal), tema::Estado::Error);
     if (!mensajeFinal.isEmpty())
         ui->registro->appendPlainText(mensajeFinal);
+    cancelable = false;
     actualizarBotones();
 
     if (recargarPlugins) {

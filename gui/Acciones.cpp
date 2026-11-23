@@ -75,7 +75,7 @@ QList<Accion> acciones()
 
         // ── Minecraft (antes: Lista-Minecraft.sh) ──
         {QStringLiteral("minecraft"), QStringLiteral("bloque"), QObject::tr("Panel de Minecraft"),
-         QObject::tr("Iniciar y reiniciar los servidores Paper, actualizar Paper, instalar plugins y jugar con Prism Launcher."),
+         QObject::tr("Iniciar los servidores, ver su consola y mandarles comandos, actualizar Paper y plugins, y jugar con Prism Launcher."),
          TipoAccion::Pagina, QStringLiteral("minecraft"), {}, minecraft},
         {QStringLiteral("minecraft"), QStringLiteral("respaldo"), QObject::tr("Respaldo"),
          QObject::tr("Copia los servidores de Minecraft al servidor de respaldos."),

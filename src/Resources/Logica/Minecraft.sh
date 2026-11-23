@@ -3,9 +3,13 @@
 # Minecraft Servers/Servidores/<servidor>/ con su servidor.conf (ver Minecraft-comun.sh).
 #
 # Uso: Minecraft.sh servidores                       todos los servidores y su estado
-#      Minecraft.sh iniciar SERVIDOR                 lo abre en una terminal
-#      Minecraft.sh detener SERVIDOR                 lo apaga guardando los mundos
-#      Minecraft.sh reiniciar SERVIDOR               detener + iniciar
+#      Minecraft.sh iniciar SERVIDOR                 lo prende (en tmux) y abre su consola en una terminal
+#      Minecraft.sh detener SERVIDOR [SEGUNDOS]      lo apaga guardando los mundos (avisando antes en el chat)
+#      Minecraft.sh reiniciar SERVIDOR [SEGUNDOS]    detener + iniciar
+#      Minecraft.sh terminal SERVIDOR                abre su consola en una terminal (cerrarla no lo apaga)
+#      Minecraft.sh comando SERVIDOR TEXTO           escribe un comando en su consola (ej. «say hola», sin «/»)
+#      Minecraft.sh registro SERVIDOR                las últimas líneas de su registro y las que van llegando
+#      Minecraft.sh jugadores SERVIDOR               quién está conectado (no escribe nada en la consola)
 #      Minecraft.sh paper SERVIDOR...                lo pasa a la última compilación estable de Paper de su versión
 #      Minecraft.sh plugins SERVIDOR                 sus plugins (reconocidos en Modrinth/GeyserMC) y si hay versión nueva
 #      Minecraft.sh plugins-actualizar SERVIDOR [ARCHIVO...]   actualiza los que tienen versión nueva (todos o esos)
@@ -13,7 +17,7 @@
 #      Minecraft.sh reiniciar-mundo SERVIDOR         guarda el mundo en Respaldos/ y lo borra (Paper hace uno nuevo)
 #      Minecraft.sh ram SERVIDOR 8G                  cambia la memoria máxima
 #      Minecraft.sh carpeta SERVIDOR                 abre la carpeta del servidor
-#      Minecraft.sh consola SERVIDOR                 (interno) lo que corre la terminal de iniciar
+#      Minecraft.sh consola SERVIDOR                 (interno) lo que corre dentro de tmux
 #      Minecraft.sh instancias                       instancias de Prism Launcher
 #      Minecraft.sh prism "INSTANCIA"                abre la instancia y entra al servidor de casa
 #
@@ -23,6 +27,14 @@
 #   INSTANCIA <instancia>
 #   ETAPA <texto>        ESPERA <segundos>   (detener: cuánto lleva guardando)
 #   AVISO <texto>        LISTO <texto>        ERROR <texto>
+#   CONSOLA COMANDOS|SOLO_LECTURA|APAGADO   (registro: si se le pueden mandar comandos)
+#   LINEA <texto>        (registro: una línea del registro del servidor)
+#   JUGADORES conectados<tab>máximo<tab>nombre,nombre…
+#
+# Consola compartida (desde la 4.12.0): el servidor corre dentro de tmux (socket propio «minecraft»,
+# sesión «mc-<servidor>»), así sigue prendido aunque se cierre la terminal o el Manager, y el panel
+# puede mandarle comandos. Desde otro lado: tmux -L minecraft attach -t mc-26_3_SMP-1
+# MINECRAFT_SIN_TERMINAL=1 hace que iniciar/reiniciar no abran la terminal (pruebas, uso por SSH).
 #
 # Código de salida: 0 bien, 1 falló, 2 error de uso.
 
@@ -50,17 +62,65 @@ servidor_valido() {
 apagado() {
     [[ -z "$(pid_servidor "$(carpeta_servidor "$1")")" ]]
 }
-# Abre la consola del servidor en una terminal que sigue abierta aunque se cierre el Manager
-abrir_terminal() {
-    setsid -f konsole --workdir "$(carpeta_servidor "$1")" -p tabtitle="$1" -e "$AQUI/Minecraft.sh" consola "$1" &>/dev/null
+# --- Consola compartida (tmux) -------------------------------------------------------------
+TMUX_SOCKET="${MINECRAFT_TMUX:-minecraft}"
+mc_tmux() { tmux -L "$TMUX_SOCKET" -f /dev/null "$@"; }
+# Nombre de la sesión de tmux («26.3 SMP-1» → «mc-26_3_SMP-1»: tmux no acepta puntos ni dos puntos)
+sesion() { local s="$1"; printf 'mc-%s\n' "${s//[^A-Za-z0-9_-]/_}"; }
+# ¿Corre en tmux? (si se prendió de otra forma no se le pueden mandar comandos)
+compartida() {
+    command -v tmux &>/dev/null && mc_tmux has-session -t "=$(sesion "$1")" 2>/dev/null
 }
-# Detiene el servidor guardando los mundos: Paper los guarda al recibir SIGTERM (como con «stop»)
+# Escribe una línea en la consola del servidor, como si se tecleara
+enviar() {
+    local ses; ses=$(sesion "$1")
+    mc_tmux send-keys -t "=$ses:" -l -- "$2" && mc_tmux send-keys -t "=$ses:" Enter
+}
+# Prende el servidor: dentro de tmux si está, si no en una terminal como antes de la 4.12.0
+arrancar() {
+    local ses carpeta
+    carpeta=$(carpeta_servidor "$1")
+    if command -v tmux &>/dev/null; then
+        ses=$(sesion "$1")
+        mc_tmux kill-session -t "=$ses" 2>/dev/null    # una que quedó de un apagado anterior
+        mc_tmux new-session -d -s "$ses" -x 200 -y 50 -c "$carpeta" "$AQUI/Minecraft.sh" consola "$1" \
+            || error "No se pudo abrir la consola (tmux) de $1."
+        mc_tmux set -g mouse on \; set -g history-limit 20000 \; set -g status-left "" \
+            \; set -g status-right-length 120 \; set -g status-style "bg=#00aae4,fg=black" \
+            \; set -g status-right "Cerrar esta ventana NO apaga el servidor (para apagarlo: stop) " &>/dev/null
+    else
+        setsid -f konsole --workdir "$carpeta" -p tabtitle="$1" -e "$AQUI/Minecraft.sh" consola "$1" &>/dev/null
+    fi
+}
+# Abre la consola en una terminal que se puede cerrar sin apagar el servidor
+abrir_terminal() {
+    [[ "${MINECRAFT_SIN_TERMINAL:-}" == 1 ]] && return 0
+    compartida "$1" || return 0
+    setsid -f konsole -p tabtitle="$1" -e tmux -L "$TMUX_SOCKET" -f /dev/null attach -t "=$(sesion "$1")" &>/dev/null
+}
+# Detiene el servidor guardando los mundos. Con SEGUNDOS > 0 (y consola compartida) primero avisa en el
+# chat y espera; si se cancela mientras espera, avisa que no se apaga. Uso: detener SERVIDOR [SEGUNDOS] [verbo]
 detener() {
-    local pid s
+    local pid s espera="${2:-0}" verbo="${3:-apaga}"
     pid=$(pid_servidor "$(carpeta_servidor "$1")")
     [[ -n "$pid" ]] || return 0
+    if (( espera > 0 )) && compartida "$1"; then
+        # (el trap puede correr dentro de otra función: usa variables propias, no $1)
+        AVISO_SERVIDOR="$1"; AVISO_VERBO="$verbo"
+        trap 'enviar "$AVISO_SERVIDOR" "say Se canceló: el servidor no se $AVISO_VERBO." 2>/dev/null; exit 130' TERM INT HUP PIPE
+        for (( s = espera; s > 0; s-- )); do
+            kill -0 "$pid" 2>/dev/null || { trap - TERM INT HUP PIPE; return 0; }
+            if (( s == espera || s == 30 || s == 10 || s <= 5 )); then
+                enviar "$1" "say El servidor se $verbo en $s segundo$( (( s > 1 )) && echo s)."
+            fi
+            emitir "ETAPA Avisado en el chat: se $verbo en $s s"
+            sleep 1
+        done
+        trap - TERM INT HUP PIPE
+    fi
     emitir "ETAPA Deteniendo $1 (guardando mundos)"
-    kill -TERM "$pid"
+    # «stop» por la consola es lo mismo que hace un jugador; sin consola, SIGTERM (Paper guarda igual)
+    if compartida "$1"; then enviar "$1" "stop"; else kill -TERM "$pid"; fi
     for (( s = 0; s < 120; s++ )); do
         kill -0 "$pid" 2>/dev/null || return 0
         emitir "ESPERA $s"
@@ -88,6 +148,7 @@ consola)
     leer_conf "$servidor"
     cd "$(carpeta_servidor "$servidor")" || exit 1
     echo "== $servidor (${CONF_TIPO^} $CONF_VERSION, hasta $CONF_RAM de RAM). Para apagarlo: escribí «stop»."
+    [[ -n "${TMUX:-}" ]] && echo "== Cerrar esta ventana no lo apaga: sigue en segundo plano (el Panel de Minecraft lo vuelve a mostrar)."
     if [[ "$CONF_TIPO" == forge ]]; then
         bash ./run.sh nogui
     else
@@ -95,6 +156,8 @@ consola)
         java -Xms1G -Xmx"$CONF_RAM" -jar "$CONF_JAR" nogui
     fi
     echo; echo "Servidor cerrado."
+    # En tmux sin nadie mirando no hace falta esperar
+    [[ -n "${TMUX:-}" && "$(tmux display-message -p '#{session_attached}' 2>/dev/null)" == 0 ]] && exit 0
     read -r -t 30 -p "Enter para cerrar (se cierra solo en 30 s)…" || true
     ;;
 
@@ -105,24 +168,70 @@ iniciar)
     while IFS= read -r otro; do
         [[ "$otro" != "$servidor" ]] && ! apagado "$otro" && error "Ya está encendido «$otro» (usan el mismo puerto). Detenelo primero."
     done < <(listar_servidores)
+    arrancar "$servidor"
     abrir_terminal "$servidor"
-    emitir "LISTO $servidor iniciado en una terminal."
+    emitir "LISTO $servidor iniciado."
     ;;
 
-detener)
-    servidor="${2:-}"; servidor_valido "$servidor"
-    apagado "$servidor" && { emitir "LISTO $servidor ya estaba apagado."; exit 0; }
-    detener "$servidor"
-    emitir "LISTO $servidor detenido (mundos guardados)."
+detener|reiniciar)
+    accion="$1"; servidor="${2:-}"; servidor_valido "$servidor"
+    segundos="${3:-0}"
+    [[ "$segundos" =~ ^[0-9]{1,3}$ ]] || error "Los segundos de aviso tienen que ser un número (0 a 999)." 2
+    if apagado "$servidor"; then
+        [[ "$accion" == detener ]] && { emitir "LISTO $servidor ya estaba apagado."; exit 0; }
+        error "$servidor no está encendido."
+    fi
+    if [[ "$accion" == detener ]]; then
+        detener "$servidor" "$segundos" apaga
+        emitir "LISTO $servidor detenido (mundos guardados)."
+    else
+        detener "$servidor" "$segundos" reinicia
+        emitir "ETAPA Abriendo $servidor"
+        arrancar "$servidor"
+        abrir_terminal "$servidor"
+        emitir "LISTO $servidor reiniciado."
+    fi
     ;;
 
-reiniciar)
+terminal)
     servidor="${2:-}"; servidor_valido "$servidor"
     apagado "$servidor" && error "$servidor no está encendido."
-    detener "$servidor"
-    emitir "ETAPA Abriendo $servidor"
-    abrir_terminal "$servidor"
-    emitir "LISTO $servidor reiniciado."
+    compartida "$servidor" || error "$servidor se prendió sin consola compartida: su terminal es la que se abrió al iniciarlo."
+    MINECRAFT_SIN_TERMINAL=0 abrir_terminal "$servidor"
+    emitir "LISTO Abriendo la consola de $servidor (cerrar la terminal no lo apaga)."
+    ;;
+
+comando)
+    servidor="${2:-}"; servidor_valido "$servidor"
+    texto="${3:-}"
+    texto="${texto#"${texto%%[![:space:]]*}"}"; texto="${texto%"${texto##*[![:space:]]}"}"    # sin espacios a los costados
+    texto="${texto#/}"
+    [[ -n "$texto" ]] || error "Escribí un comando (por ejemplo: say hola)." 2
+    [[ "$texto" != *[[:cntrl:]]* ]] || error "El comando no puede tener saltos de línea ni caracteres de control." 2
+    (( ${#texto} <= 500 )) || error "El comando es demasiado largo." 2
+    apagado "$servidor" && error "$servidor no está encendido."
+    compartida "$servidor" || error "$servidor se prendió sin consola compartida (desde otro lado o con un Manager anterior a la 4.12.0): reinicialo desde el panel para mandarle comandos."
+    enviar "$servidor" "$texto" || error "No se pudo escribir en la consola de $servidor."
+    emitir "LISTO Enviado a $servidor: $texto"
+    ;;
+
+registro)
+    servidor="${2:-}"; servidor_valido "$servidor"
+    if apagado "$servidor"; then emitir "CONSOLA APAGADO"
+    elif compartida "$servidor"; then emitir "CONSOLA COMANDOS"
+    else emitir "CONSOLA SOLO_LECTURA"; fi
+    # Sigue el archivo aunque Paper lo cambie al reiniciar (-F); termina cuando el panel lo cancela o
+    # si el Manager se cierra de golpe (--pid: el proceso que lo llamó)
+    tail -n 300 -F --pid="$PPID" -- "$(carpeta_servidor "$servidor")/logs/latest.log" 2>/dev/null | sed -u 's/\r$//; s/^/LINEA /'
+    ;;
+
+jugadores)
+    servidor="${2:-}"; servidor_valido "$servidor"
+    apagado "$servidor" && exit 0
+    puerto=$(sed -n 's/^server-port=//p' "$(carpeta_servidor "$servidor")/server.properties" 2>/dev/null | head -n1 | tr -d '\r ')
+    [[ "$puerto" =~ ^[0-9]{1,5}$ ]] || puerto=25565
+    python3 -I "$API" ping "$puerto" 2>/dev/null | grep '^JUGADORES ' || emitir "AVISO $servidor todavía no contesta (puede estar arrancando)."
+    exit 0
     ;;
 
 paper)
@@ -285,6 +394,6 @@ prism)
     ;;
 
 *)
-    error "Uso: Minecraft.sh servidores|iniciar|detener|reiniciar|paper|plugins|plugins-actualizar|plugin|reiniciar-mundo|ram|carpeta|instancias|prism ..." 2
+    error "Uso: Minecraft.sh servidores|iniciar|detener|reiniciar|terminal|comando|registro|jugadores|paper|plugins|plugins-actualizar|plugin|reiniciar-mundo|ram|carpeta|instancias|prism ..." 2
     ;;
 esac

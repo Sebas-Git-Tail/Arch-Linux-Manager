@@ -13,7 +13,7 @@
   <property name="windowTitle">
    <string>Panel de Minecraft</string>
   </property>
-  <layout class="QVBoxLayout" name="layoutPrincipal">
+  <layout class="QVBoxLayout" name="layoutPrincipal" stretch="1,1,0,0,0,0">
    <item>
     <widget class="QGroupBox" name="grupoServidores">
      <property name="title">
@@ -22,6 +22,12 @@
      <layout class="QVBoxLayout" name="layoutServidores">
       <item>
        <widget class="QTreeWidget" name="arbolServidores">
+        <property name="minimumSize">
+         <size>
+          <width>0</width>
+          <height>110</height>
+         </size>
+        </property>
         <property name="rootIsDecorated">
          <bool>false</bool>
         </property>
@@ -181,97 +187,194 @@
     </widget>
    </item>
    <item>
-    <widget class="QGroupBox" name="grupoPlugins">
-     <property name="title">
-      <string>Plugins del servidor elegido (se reconocen en Modrinth)</string>
+    <widget class="QTabWidget" name="pestanasServidor">
+     <property name="currentIndex">
+      <number>0</number>
      </property>
-     <layout class="QVBoxLayout" name="layoutPlugins">
-      <item>
-       <widget class="QTreeWidget" name="arbolPlugins">
-        <property name="rootIsDecorated">
-         <bool>false</bool>
-        </property>
-        <property name="uniformRowHeights">
-         <bool>true</bool>
-        </property>
-        <property name="selectionMode">
-         <enum>QAbstractItemView::SelectionMode::NoSelection</enum>
-        </property>
-        <column>
-         <property name="text">
-          <string>Plugin</string>
+     <widget class="QWidget" name="pestanaConsola">
+      <attribute name="title">
+       <string>Consola</string>
+      </attribute>
+      <layout class="QVBoxLayout" name="layoutConsola">
+       <item>
+        <layout class="QHBoxLayout" name="layoutConsolaArriba">
+         <item>
+          <widget class="QLabel" name="etiquetaJugadores">
+           <property name="text">
+            <string>Elegí un servidor para ver su consola.</string>
+           </property>
+           <property name="wordWrap">
+            <bool>true</bool>
+           </property>
+           <property name="sizePolicy">
+            <sizepolicy hsizetype="Expanding" vsizetype="Preferred">
+             <horstretch>1</horstretch>
+             <verstretch>0</verstretch>
+            </sizepolicy>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QPushButton" name="botonTerminal">
+           <property name="enabled">
+            <bool>false</bool>
+           </property>
+           <property name="text">
+            <string>Abrir en una terminal</string>
+           </property>
+           <property name="toolTip">
+            <string>La misma consola en una ventana aparte. Cerrarla no apaga el servidor.</string>
+           </property>
+          </widget>
+         </item>
+        </layout>
+       </item>
+       <item>
+        <widget class="QPlainTextEdit" name="textoConsola">
+         <property name="minimumSize">
+          <size>
+           <width>0</width>
+           <height>100</height>
+          </size>
          </property>
-        </column>
-        <column>
-         <property name="text">
-          <string>Versión</string>
+         <property name="readOnly">
+          <bool>true</bool>
          </property>
-        </column>
-        <column>
-         <property name="text">
-          <string>Nueva</string>
+         <property name="lineWrapMode">
+          <enum>QPlainTextEdit::LineWrapMode::NoWrap</enum>
          </property>
-        </column>
-        <column>
-         <property name="text">
-          <string>Estado</string>
+         <property name="maximumBlockCount">
+          <number>2000</number>
          </property>
-        </column>
-       </widget>
-      </item>
-      <item>
-       <layout class="QHBoxLayout" name="layoutAccionesPlugins">
-        <item>
-         <widget class="QPushButton" name="botonBuscarPlugins">
-          <property name="enabled">
-           <bool>false</bool>
-          </property>
-          <property name="text">
-           <string>Buscar actualizaciones</string>
-          </property>
-         </widget>
-        </item>
-        <item>
-         <widget class="QPushButton" name="botonActualizarPlugins">
-          <property name="enabled">
-           <bool>false</bool>
-          </property>
-          <property name="text">
-           <string>Actualizar plugins</string>
-          </property>
-          <property name="toolTip">
-           <string>Pone la versión nueva de los que la tienen (los anteriores quedan en Respaldos)</string>
-          </property>
-         </widget>
-        </item>
-        <item>
-         <spacer name="espacioPlugins">
-          <property name="orientation">
-           <enum>Qt::Orientation::Horizontal</enum>
-          </property>
-         </spacer>
-        </item>
-       </layout>
-      </item>
-      <item>
-       <layout class="QHBoxLayout" name="layoutPlugin">
-        <item>
-         <widget class="QLineEdit" name="editPlugin">
-          <property name="placeholderText">
-           <string>Plugin nuevo: nombre en Modrinth (ej. Chunky) o su URL</string>
-          </property>
-         </widget>
-        </item>
-        <item>
-         <widget class="QPushButton" name="botonPlugin">
-          <property name="text">
-           <string>Instalar en los marcados</string>
-          </property>
-         </widget>
-        </item>
-       </layout>
-      </item>
-     </layout>
+        </widget>
+       </item>
+       <item>
+        <layout class="QHBoxLayout" name="layoutComando">
+         <item>
+          <widget class="QLineEdit" name="editComando">
+           <property name="enabled">
+            <bool>false</bool>
+           </property>
+           <property name="placeholderText">
+            <string>Comando (ej. say hola, time set day, list). Flechas: los anteriores</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QPushButton" name="botonEnviar">
+           <property name="enabled">
+            <bool>false</bool>
+           </property>
+           <property name="text">
+            <string>Enviar</string>
+           </property>
+          </widget>
+         </item>
+        </layout>
+       </item>
+      </layout>
+     </widget>
+     <widget class="QWidget" name="pestanaPlugins">
+      <attribute name="title">
+       <string>Plugins</string>
+      </attribute>
+      <layout class="QVBoxLayout" name="layoutPestanaPlugins">
+       <item>
+          <widget class="QGroupBox" name="grupoPlugins">
+           <property name="title">
+            <string>Plugins del servidor elegido (se reconocen en Modrinth)</string>
+           </property>
+           <layout class="QVBoxLayout" name="layoutPlugins">
+            <item>
+             <widget class="QTreeWidget" name="arbolPlugins">
+              <property name="rootIsDecorated">
+               <bool>false</bool>
+              </property>
+              <property name="uniformRowHeights">
+               <bool>true</bool>
+              </property>
+              <property name="selectionMode">
+               <enum>QAbstractItemView::SelectionMode::NoSelection</enum>
+              </property>
+              <column>
+               <property name="text">
+                <string>Plugin</string>
+               </property>
+              </column>
+              <column>
+               <property name="text">
+                <string>Versión</string>
+               </property>
+              </column>
+              <column>
+               <property name="text">
+                <string>Nueva</string>
+               </property>
+              </column>
+              <column>
+               <property name="text">
+                <string>Estado</string>
+               </property>
+              </column>
+             </widget>
+            </item>
+            <item>
+             <layout class="QHBoxLayout" name="layoutAccionesPlugins">
+              <item>
+               <widget class="QPushButton" name="botonBuscarPlugins">
+                <property name="enabled">
+                 <bool>false</bool>
+                </property>
+                <property name="text">
+                 <string>Buscar actualizaciones</string>
+                </property>
+               </widget>
+              </item>
+              <item>
+               <widget class="QPushButton" name="botonActualizarPlugins">
+                <property name="enabled">
+                 <bool>false</bool>
+                </property>
+                <property name="text">
+                 <string>Actualizar plugins</string>
+                </property>
+                <property name="toolTip">
+                 <string>Pone la versión nueva de los que la tienen (los anteriores quedan en Respaldos)</string>
+                </property>
+               </widget>
+              </item>
+              <item>
+               <spacer name="espacioPlugins">
+                <property name="orientation">
+                 <enum>Qt::Orientation::Horizontal</enum>
+                </property>
+               </spacer>
+              </item>
+             </layout>
+            </item>
+            <item>
+             <layout class="QHBoxLayout" name="layoutPlugin">
+              <item>
+               <widget class="QLineEdit" name="editPlugin">
+                <property name="placeholderText">
+                 <string>Plugin nuevo: nombre en Modrinth (ej. Chunky) o su URL</string>
+                </property>
+               </widget>
+              </item>
+              <item>
+               <widget class="QPushButton" name="botonPlugin">
+                <property name="text">
+                 <string>Instalar en los marcados</string>
+                </property>
+               </widget>
+              </item>
+             </layout>
+            </item>
+           </layout>
+          </widget>
+       </item>
+      </layout>
+     </widget>
     </widget>
    </item>
    <item>
@@ -314,11 +417,25 @@
     </widget>
    </item>
    <item>
-    <widget class="QProgressBar" name="barraProgreso">
-     <property name="value">
-      <number>0</number>
-     </property>
-    </widget>
+    <layout class="QHBoxLayout" name="layoutProgreso">
+     <item>
+      <widget class="QProgressBar" name="barraProgreso">
+       <property name="value">
+        <number>0</number>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QPushButton" name="botonCancelar">
+       <property name="text">
+        <string>Cancelar</string>
+       </property>
+       <property name="toolTip">
+        <string>No apagar: avisa en el chat que se canceló</string>
+       </property>
+      </widget>
+     </item>
+    </layout>
    </item>
    <item>
     <widget class="QPlainTextEdit" name="registro">

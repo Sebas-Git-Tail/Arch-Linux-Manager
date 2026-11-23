@@ -5,7 +5,7 @@
 # Datos del paquete: nombre, versión del programa (pkgver) y número de compilación
 # de esa misma versión (pkgrel)
 pkgname=Arch-Linux-Manager
-pkgver=4.11.0
+pkgver=4.12.0
 pkgrel=1
 pkgdesc="A useful set of GUI scripts for Arch Linux"
 # Ya no es «any»: la ventana Qt (gui/) se compila para cada procesador
@@ -33,6 +33,8 @@ depends=(
     'mpv'
     # terminal para Actualizar Arch, App, Playit y los servidores de Minecraft
     'konsole'
+    # consola compartida de los servidores de Minecraft (siguen prendidos aunque se cierre la terminal)
+    'tmux'
     # descargas
     'curl'
     'wget'
