@@ -13,6 +13,8 @@
 #include <QTimer>
 #include <QWidget>
 
+class QTreeWidgetItem;
+
 namespace Ui { class PaginaMinecraft; }
 
 class PaginaMinecraft : public QWidget
@@ -58,6 +60,7 @@ private:
     void terminoConsulta();
     void terminoAccion(int codigo, bool cancelado);
     void actualizarBotones();
+    QTreeWidgetItem *filaGrupo(const QString &grupo);
     QString servidorElegido(bool *encendido = nullptr) const;
     QStringList servidoresMarcados() const;
 

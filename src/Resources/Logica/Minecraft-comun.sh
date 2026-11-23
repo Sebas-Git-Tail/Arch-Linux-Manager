@@ -1,38 +1,52 @@
 # shellcheck shell=bash
 # Se incluye con source desde Logica/Minecraft.sh y Logica/Respaldo.sh. Servidores de Minecraft
-# ordenados (desde el 16/11/2026), todos con la misma forma:
+# ordenados (desde el 16/11/2026; por grupo desde el 23/11/2026):
 #
-#   Minecraft Servers/Servidores/<versión> <nombre>/   todo adentro directo (server.properties, world/,
-#                                                      plugins/, el jar) + servidor.conf
-#   Minecraft Servers/Respaldos/<servidor>/            jars y plugins reemplazados, mundos reiniciados
+#   Minecraft Servers/Servidores/<grupo>/<versión>/<servidor>/   todo adentro directo (server.properties,
+#                                                     world/, plugins/, el jar) + servidor.conf
+#   Minecraft Servers/Respaldos/<grupo>/<versión>/<servidor>/    jars y plugins reemplazados, mundos reiniciados
+#
+# Cada servidor se identifica por su ruta dentro de Servidores/ («Amigos/26.1/26.1.2 SMP-1»): así puede haber
+# dos «26.1.2 SMP-1» en grupos distintos. Se muestra como «26.1.2 SMP-1 (Amigos)». Cualquier carpeta con
+# servidor.conf hasta 3 niveles adentro aparece sola en el panel (también directo en Servidores/, sin grupo).
 #
 # servidor.conf (lo único que hay que tocar a mano, si hace falta):
 #   NOMBRE="26.3 SMP-1"   TIPO=paper|forge   VERSION=26.3   JAR="paper-26.3-244.jar"   RAM=8G
-# Cualquier carpeta de Servidores/ con servidor.conf aparece sola en el panel (Paper, Forge, la versión
-# que sea). Forge arranca con su run.sh (la RAM va en user_jvm_args.txt).
+# (NOMBRE es solo informativo: manda la carpeta.) Forge arranca con su run.sh (la RAM va en user_jvm_args.txt).
 
 MINECRAFT_DIR="${MINECRAFT_DIR:-/home/sebastian/Escritorio/Cosas/Minecraft Servers}"
 SERVIDORES_DIR="$MINECRAFT_DIR/Servidores"
 RESPALDOS_MC_DIR="$MINECRAFT_DIR/Respaldos"
 
-# Un servidor por línea (el nombre de su carpeta, como «26.3 SMP-1»), ordenados por versión y nombre
+# Un servidor por línea (su ruta dentro de Servidores/, como «Amigos/26.1/26.1.2 SMP-1»), ordenados por
+# grupo, versión y nombre. No cuenta un servidor.conf que esté dentro de otro servidor.
 listar_servidores() {
-    local dir
-    for dir in "$SERVIDORES_DIR"/*/; do
-        [[ -f "$dir/servidor.conf" ]] || continue
-        dir="${dir%/}"
-        printf '%s\n' "${dir##*/}"
-    done | sort -V
+    local conf rel padre dentro
+    while IFS= read -r -d '' conf; do
+        rel="${conf%/servidor.conf}"; rel="${rel#"$SERVIDORES_DIR"/}"
+        [[ "$rel" != *[[:cntrl:]]* && "/$rel/" != */../* && "/$rel/" != */./* ]] || continue
+        padre="$rel"; dentro=0
+        while [[ "$padre" == */* ]]; do
+            padre="${padre%/*}"
+            [[ -f "$SERVIDORES_DIR/$padre/servidor.conf" ]] && { dentro=1; break; }
+        done
+        (( dentro )) || printf '%s\n' "$rel"
+    done < <(find "$SERVIDORES_DIR" -mindepth 2 -maxdepth 4 -name servidor.conf -type f -print0 2>/dev/null) | sort -V
 }
 listar_servidores_paper() { listar_servidores; }    # nombre viejo (lo usa Respaldo.sh)
 
-# Carpeta del servidor. Uso: carpeta_servidor "26.3 SMP-1"
+# Nombre para mostrar: «Amigos/26.1/26.1.2 SMP-1» → «26.1.2 SMP-1 (Amigos)» (sin grupo, tal cual)
+nombre_visible() {
+    if [[ "$1" == */* ]]; then printf '%s (%s)\n' "${1##*/}" "${1%%/*}"; else printf '%s\n' "$1"; fi
+}
+
+# Carpeta del servidor. Uso: carpeta_servidor "Amigos/26.1/26.1.2 SMP-1"
 carpeta_servidor() {
     printf '%s\n' "$SERVIDORES_DIR/$1"
 }
 
 # Lee servidor.conf sin ejecutarlo (solo las claves conocidas, con el formato esperado) y deja
-# CONF_TIPO, CONF_VERSION, CONF_JAR y CONF_RAM. Uso: leer_conf "26.3 SMP-1"
+# CONF_TIPO, CONF_VERSION, CONF_JAR y CONF_RAM. Uso: leer_conf "Amigos/26.3/26.3 SMP-1"
 leer_conf() {
     local conf linea clave valor
     conf="$(carpeta_servidor "$1")/servidor.conf"
@@ -52,7 +66,7 @@ leer_conf() {
     return 0
 }
 
-# Cambia (o agrega) una clave de servidor.conf. Uso: cambiar_conf "26.3 SMP-1" JAR "paper-26.3-253.jar"
+# Cambia (o agrega) una clave de servidor.conf. Uso: cambiar_conf "Amigos/26.3/26.3 SMP-1" JAR "paper-26.3-253.jar"
 cambiar_conf() {
     local conf="$(carpeta_servidor "$1")/servidor.conf" clave="$2" valor="$3" tmp
     tmp=$(mktemp)

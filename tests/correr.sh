@@ -181,6 +181,20 @@ igual "plugin al día" "$(grep 'actual.jar' <<< "$plug" | cut -f5)" "AL_DIA"
 igual "plugin que no está en Modrinth" "$(grep 'raro.jar' <<< "$plug" | cut -f5)" "DESCONOCIDO"
 MC plugins-actualizar "26.3 SMP-1" "../../x.jar" > /dev/null; igual "plugins-actualizar rechaza rutas" "$?" "2"
 unset MINECRAFT_API_FALSA
+# Por grupo (desde la 4.13.0): Servidores/<grupo>/<versión>/<servidor>, con nombres repetidos entre grupos
+mkdir -p "$S/Amigos/26.1/26.1.2 SMP-1/world" "$S/Primos/26.1/26.1.2 SMP-1" "$S/Primos/26.3" "$S/26.3 SMP-1/copia"
+for g in Amigos Primos; do printf 'TIPO=paper\nVERSION=26.1.2\nJAR="Paper.jar"\nRAM=4G\n' > "$S/$g/26.1/26.1.2 SMP-1/servidor.conf"; done
+printf 'TIPO=paper\n' > "$S/26.3 SMP-1/copia/servidor.conf"    # dentro de otro servidor: no cuenta
+lista=$(MC servidores)
+igual "por grupo: lista los dos SMP-1 con su ruta" "$(grep '26.1.2 SMP-1' <<< "$lista" | cut -f2 | tr '\n' '|')" "Amigos/26.1/26.1.2 SMP-1|Primos/26.1/26.1.2 SMP-1|"
+igual "por grupo: no cuenta un servidor.conf dentro de otro servidor" "$(grep -c '^SERVIDOR ' <<< "$lista")" "4"
+igual "por grupo: los mensajes dicen «servidor (grupo)»" "$(MC ram "Primos/26.1/26.1.2 SMP-1" 6G)" "LISTO 26.1.2 SMP-1 (Primos) va a usar hasta 6G de RAM (al iniciarlo de nuevo)."
+igual "por grupo: cambia solo el de ese grupo" "$(grep -h '^RAM=' "$S/Amigos/26.1/26.1.2 SMP-1/servidor.conf" "$S/Primos/26.1/26.1.2 SMP-1/servidor.conf" | tr '\n' ' ')" 'RAM=4G RAM="6G" '
+MC ram "26.1.2 SMP-1" 6G > /dev/null; igual "por grupo: sin el grupo no existe" "$?" "2"
+MC ram "Amigos/../Primos/26.1/26.1.2 SMP-1" 6G > /dev/null; igual "por grupo: rechaza rutas con .." "$?" "2"
+MC reiniciar-mundo "Amigos/26.1/26.1.2 SMP-1" > /dev/null
+ls "$MINECRAFT_DIR/Respaldos/Amigos/26.1/26.1.2 SMP-1/mundos/"*.tar.zst &> /dev/null && ok "por grupo: el mundo va a Respaldos/<grupo>/<versión>/<servidor>" || mal "por grupo: respaldo del mundo"
+rm -rf "$S/Amigos" "$S/Primos" "$S/26.3 SMP-1/copia"
 # Consola compartida: un «java» falso que anota lo que recibe y se apaga con «stop», dentro de un tmux
 # con socket propio de la prueba (no toca el de los servidores reales) y sin abrir terminales
 MC comando "26.3 SMP-1" "say hola" > /dev/null; igual "comando rechaza un servidor apagado" "$?" "1"

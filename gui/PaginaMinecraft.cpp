@@ -14,12 +14,31 @@
 #include <QRegularExpression>
 #include <QScrollBar>
 #include <QTimer>
+#include <QTreeWidgetItemIterator>
 
 // Datos de cada fila de la lista de servidores (en la columna 0)
-constexpr int RolNombre = Qt::UserRole;          // «26.3 SMP-1»
+constexpr int RolNombre = Qt::UserRole;          // «Amigos/26.1/26.1.2 SMP-1» (vacío en las filas de grupo)
 constexpr int RolEncendido = Qt::UserRole + 1;
 constexpr int RolRam = Qt::UserRole + 2;
 constexpr int RolTipo = Qt::UserRole + 3;
+
+// Los servidores se identifican por su ruta dentro de Servidores/ (<grupo>/<versión>/<servidor>): en la
+// lista van dentro de su grupo y en los mensajes se muestran como «26.1.2 SMP-1 (Amigos)».
+static QString etiqueta(const QString &servidor)
+{
+    const int barra = servidor.indexOf(u'/');
+    if (barra < 0)
+        return servidor;
+    return QStringLiteral("%1 (%2)").arg(servidor.section(u'/', -1), servidor.left(barra));
+}
+
+static QStringList etiquetas(const QStringList &servidores)
+{
+    QStringList lista;
+    for (const QString &s : servidores)
+        lista << etiqueta(s);
+    return lista;
+}
 
 PaginaMinecraft::PaginaMinecraft(const QString &logica, QWidget *parent)
     : QWidget(parent), ui(new Ui::PaginaMinecraft),
@@ -49,9 +68,9 @@ PaginaMinecraft::PaginaMinecraft(const QString &logica, QWidget *parent)
             verConsola();
     });
     connect(ui->arbolServidores, &QTreeWidget::itemChanged, this, [this](QTreeWidgetItem *item, int columna) {
-        if (columna != 0)
-            return;
         const QString nombre = item->data(0, RolNombre).toString();
+        if (columna != 0 || nombre.isEmpty())
+            return;
         if (item->checkState(0) == Qt::Checked)
             marcados.insert(nombre);
         else
@@ -84,8 +103,8 @@ PaginaMinecraft::PaginaMinecraft(const QString &logica, QWidget *parent)
         if (ui->arbolPlugins->topLevelItemCount() == 0 && codigo == 0)
             ui->arbolPlugins->setHeaderLabels({tr("Plugin (no tiene)"), tr("Versión"), tr("Nueva"), tr("Estado")});
         ui->grupoPlugins->setTitle(pluginsNuevos > 0
-            ? tr("Plugins de %1: %2 con versión nueva").arg(pluginsDe).arg(pluginsNuevos)
-            : tr("Plugins de %1").arg(pluginsDe));
+            ? tr("Plugins de %1: %2 con versión nueva").arg(etiqueta(pluginsDe)).arg(pluginsNuevos)
+            : tr("Plugins de %1").arg(etiqueta(pluginsDe)));
         ui->pestanasServidor->setTabText(ui->pestanasServidor->indexOf(ui->pestanaPlugins),
             pluginsNuevos > 0 ? tr("Plugins (%1 con versión nueva)").arg(pluginsNuevos) : tr("Plugins"));
         actualizarBotones();
@@ -158,7 +177,7 @@ void PaginaMinecraft::verConsola()
         ui->etiquetaJugadores->setText(tr("Elegí un servidor para ver su consola."));
     } else if (isVisible()) {
         ui->etiquetaJugadores->setText(consolaEncendido ? tr("Consultando quién está conectado…")
-                                                        : tr("%1 está apagado: se ve lo último que registró.").arg(consolaDe));
+                                                        : tr("%1 está apagado: se ve lo último que registró.").arg(etiqueta(consolaDe)));
         registro.iniciar(script, {QStringLiteral("registro"), consolaDe});
         consultarJugadores();
     }
@@ -257,14 +276,17 @@ void PaginaMinecraft::eventoConsulta(const QString &palabra, const QString &rest
             ultimo = fecha == QDate::currentDate() ? tr("hoy") : QLocale().toString(fecha, QLocale::ShortFormat);
 
         const QSignalBlocker bloqueo(ui->arbolServidores);
-        auto *item = new QTreeWidgetItem(ui->arbolServidores);
-        item->setText(0, nombre + (encendido ? tr("  (encendido)") : QString()));
+        QTreeWidgetItem *grupo = filaGrupo(nombre.contains(u'/') ? nombre.section(u'/', 0, 0) : QString());
+        auto *item = grupo ? new QTreeWidgetItem(grupo) : new QTreeWidgetItem(ui->arbolServidores);
+        if (grupo && encendido)
+            grupo->setIcon(0, tema::icono(QStringLiteral("punto"), tema::colores().ok));
+        item->setText(0, nombre.section(u'/', -1) + (encendido ? tr("  (encendido)") : QString()));
         item->setIcon(0, tema::icono(QStringLiteral("punto"), encendido ? tema::colores().ok : tema::colores().texto3));
         item->setText(1, (c.at(2) == u"forge" ? QStringLiteral("Forge ") : QStringLiteral("Paper ")) + c.at(3));
         item->setText(2, c.at(4));
         item->setText(3, ultimo);
         item->setText(4, c.at(6));
-        item->setToolTip(0, tr("Arranca con %1").arg(c.at(7)));
+        item->setToolTip(0, tr("%1\nArranca con %2").arg(nombre, c.at(7)));
         item->setData(0, RolNombre, nombre);
         item->setData(0, RolEncendido, encendido);
         item->setData(0, RolRam, c.at(6));
@@ -310,7 +332,7 @@ void PaginaMinecraft::consultarPlugins()
         actualizarBotones();
         return;
     }
-    ui->grupoPlugins->setTitle(tr("Plugins de %1: consultando Modrinth…").arg(pluginsDe));
+    ui->grupoPlugins->setTitle(tr("Plugins de %1: consultando Modrinth…").arg(etiqueta(pluginsDe)));
     plugins.iniciar(script, {QStringLiteral("plugins"), pluginsDe});
     actualizarBotones();
 }
@@ -343,6 +365,30 @@ void PaginaMinecraft::eventoPlugins(const QString &palabra, const QString &resto
     }
 }
 
+// Fila del grupo (la primera carpeta de la ruta), creada la primera vez; sin grupo, nullptr
+QTreeWidgetItem *PaginaMinecraft::filaGrupo(const QString &grupo)
+{
+    if (grupo.isEmpty())
+        return nullptr;
+    for (int i = 0; i < ui->arbolServidores->topLevelItemCount(); ++i) {
+        QTreeWidgetItem *fila = ui->arbolServidores->topLevelItem(i);
+        if (fila->data(0, RolNombre).toString().isEmpty() && fila->text(0) == grupo)
+            return fila;
+    }
+    auto *fila = new QTreeWidgetItem(ui->arbolServidores);
+    fila->setText(0, grupo);
+    QFont negrita = fila->font(0);
+    negrita.setBold(true);
+    fila->setFont(0, negrita);
+    fila->setIcon(0, tema::icono(QStringLiteral("punto"), tema::colores().texto3));
+    fila->setToolTip(0, tr("Marcar el grupo marca todos sus servidores"));
+    // No se elige (no es un servidor), pero se puede marcar entero
+    fila->setFlags(Qt::ItemIsEnabled | Qt::ItemIsUserCheckable | Qt::ItemIsAutoTristate);
+    fila->setCheckState(0, Qt::Unchecked);
+    fila->setExpanded(true);
+    return fila;
+}
+
 QString PaginaMinecraft::servidorElegido(bool *encendido) const
 {
     const QTreeWidgetItem *item = ui->arbolServidores->currentItem();
@@ -354,10 +400,10 @@ QString PaginaMinecraft::servidorElegido(bool *encendido) const
 QStringList PaginaMinecraft::servidoresMarcados() const
 {
     QStringList lista;
-    for (int i = 0; i < ui->arbolServidores->topLevelItemCount(); ++i) {
-        const QTreeWidgetItem *item = ui->arbolServidores->topLevelItem(i);
-        if (item->checkState(0) == Qt::Checked)
-            lista << item->data(0, RolNombre).toString();
+    for (QTreeWidgetItemIterator it(ui->arbolServidores); *it; ++it) {
+        const QString nombre = (*it)->data(0, RolNombre).toString();
+        if (!nombre.isEmpty() && (*it)->checkState(0) == Qt::Checked)
+            lista << nombre;
     }
     return lista;
 }
@@ -404,7 +450,7 @@ void PaginaMinecraft::ejecutar(const QStringList &argumentos, const QString &est
 
 void PaginaMinecraft::iniciar()
 {
-    ejecutar({QStringLiteral("iniciar"), servidorElegido()}, tr("Iniciando %1…").arg(servidorElegido()));
+    ejecutar({QStringLiteral("iniciar"), servidorElegido()}, tr("Iniciando %1…").arg(etiqueta(servidorElegido())));
 }
 
 void PaginaMinecraft::detener()
@@ -424,8 +470,8 @@ void PaginaMinecraft::detenerOReiniciar(bool reinicio)
     int segundos = 0;
     if (jugadoresConectados > 0 && consola == Consola::Comandos && consolaDe == servidor) {
         QMessageBox caja(QMessageBox::Question, windowTitle(),
-            (jugadoresConectados == 1 ? tr("Hay 1 jugador en %1.").arg(servidor)
-                                      : tr("Hay %1 jugadores en %2.").arg(jugadoresConectados).arg(servidor))
+            (jugadoresConectados == 1 ? tr("Hay 1 jugador en %1.").arg(etiqueta(servidor))
+                                      : tr("Hay %1 jugadores en %2.").arg(jugadoresConectados).arg(etiqueta(servidor)))
                 + u' ' + (reinicio ? tr("Se va a reiniciar guardando los mundos.") : tr("Se va a apagar guardando los mundos.")),
             QMessageBox::Cancel, this);
         caja.setInformativeText(tr("Con el aviso, el chat cuenta los segundos y se puede cancelar mientras tanto."));
@@ -439,14 +485,14 @@ void PaginaMinecraft::detenerOReiniciar(bool reinicio)
             return;
     } else if (QMessageBox::question(this, windowTitle(),
                    reinicio ? tr("Se va a detener %1 guardando los mundos (los jugadores se desconectan) y se va a "
-                                 "volver a abrir. ¿Continuar?").arg(servidor)
+                                 "volver a abrir. ¿Continuar?").arg(etiqueta(servidor))
                             : tr("Se va a apagar %1 guardando los mundos (los jugadores se desconectan). ¿Continuar?")
-                                  .arg(servidor)) != QMessageBox::Yes) {
+                                  .arg(etiqueta(servidor))) != QMessageBox::Yes) {
         return;
     }
     cancelable = segundos > 0;
     ejecutar({reinicio ? QStringLiteral("reiniciar") : QStringLiteral("detener"), servidor, QString::number(segundos)},
-             reinicio ? tr("Reiniciando %1…").arg(servidor) : tr("Deteniendo %1…").arg(servidor));
+             reinicio ? tr("Reiniciando %1…").arg(etiqueta(servidor)) : tr("Deteniendo %1…").arg(etiqueta(servidor)));
 }
 
 void PaginaMinecraft::actualizarPaper()
@@ -461,7 +507,7 @@ void PaginaMinecraft::actualizarPaper()
     if (QMessageBox::question(this, windowTitle(),
             tr("Se va a bajar la última compilación estable de Paper (de la misma versión de Minecraft) para:\n\n%1\n\n"
                "Los encendidos no se tocan y el jar anterior queda en Respaldos. ¿Continuar?")
-                .arg(servidores.join(QStringLiteral("\n")))) != QMessageBox::Yes)
+                .arg(etiquetas(servidores).join(QStringLiteral("\n")))) != QMessageBox::Yes)
         return;
     recargarPlugins = false;
     ejecutar(QStringList{QStringLiteral("paper")} + servidores, tr("Actualizando Paper…"));
@@ -474,7 +520,7 @@ void PaginaMinecraft::cambiarRam()
     const QString actual = item ? item->data(0, RolRam).toString() : QStringLiteral("8G");
     bool ok = false;
     const int gb = QInputDialog::getInt(this, windowTitle(),
-        tr("Memoria máxima para %1 (GB):").arg(servidor),
+        tr("Memoria máxima para %1 (GB):").arg(etiqueta(servidor)),
         QString(actual).remove(QRegularExpression(QStringLiteral("[^0-9]"))).toInt(), 1, 24, 1, &ok);
     if (!ok)
         return;
@@ -486,11 +532,11 @@ void PaginaMinecraft::reiniciarMundo()
     const QString servidor = servidorElegido();
     if (QMessageBox::warning(this, windowTitle(),
             tr("¿Reiniciar el mundo de %1?\n\nEl mundo actual (con el Nether y el End) se guarda comprimido en "
-               "Respaldos/%1/mundos y se borra de la carpeta del servidor: al iniciarlo se genera uno nuevo.")
-                .arg(servidor),
+               "Respaldos/%2/mundos y se borra de la carpeta del servidor: al iniciarlo se genera uno nuevo.")
+                .arg(etiqueta(servidor), servidor),
             QMessageBox::Yes | QMessageBox::No, QMessageBox::No) != QMessageBox::Yes)
         return;
-    ejecutar({QStringLiteral("reiniciar-mundo"), servidor}, tr("Reiniciando el mundo de %1…").arg(servidor));
+    ejecutar({QStringLiteral("reiniciar-mundo"), servidor}, tr("Reiniciando el mundo de %1…").arg(etiqueta(servidor)));
 }
 
 void PaginaMinecraft::abrirCarpeta()
@@ -502,11 +548,11 @@ void PaginaMinecraft::actualizarPlugins()
 {
     const QString servidor = servidorElegido();
     if (QMessageBox::question(this, windowTitle(),
-            tr("Se van a actualizar %n plugin(s) de %1. Los anteriores quedan en Respaldos/%1/plugins. ¿Continuar?",
-               nullptr, pluginsNuevos).arg(servidor)) != QMessageBox::Yes)
+            tr("Se van a actualizar %n plugin(s) de %1. Los anteriores quedan en Respaldos/%2/plugins. ¿Continuar?",
+               nullptr, pluginsNuevos).arg(etiqueta(servidor), servidor)) != QMessageBox::Yes)
         return;
     recargarPlugins = true;
-    ejecutar({QStringLiteral("plugins-actualizar"), servidor}, tr("Actualizando plugins de %1…").arg(servidor));
+    ejecutar({QStringLiteral("plugins-actualizar"), servidor}, tr("Actualizando plugins de %1…").arg(etiqueta(servidor)));
 }
 
 void PaginaMinecraft::instalarPlugin()

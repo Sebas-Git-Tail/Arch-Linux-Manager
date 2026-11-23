@@ -234,7 +234,7 @@ minecraft)
     if [[ "$forzar" == no ]]; then
         encendidos=()
         while IFS= read -r servidor; do
-            [[ -n "$(pid_servidor "$(carpeta_servidor "$servidor")")" ]] && encendidos+=("$servidor")
+            [[ -n "$(pid_servidor "$(carpeta_servidor "$servidor")")" ]] && encendidos+=("$(nombre_visible "$servidor")")
         done < <(listar_servidores_paper)
         if (( ${#encendidos[@]} > 0 )); then
             emitir "ENCENDIDOS ${encendidos[*]}"
