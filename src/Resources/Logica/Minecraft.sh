@@ -29,6 +29,7 @@
 #   AVISO <texto>        LISTO <texto>        ERROR <texto>
 #   CONSOLA COMANDOS|SOLO_LECTURA|APAGADO   (registro: si se le pueden mandar comandos)
 #   LINEA <texto>        (registro: una línea del registro del servidor)
+#   LATIDO               (registro: cada 15 s, para notar si se cortó la conexión; se ignora)
 #   JUGADORES conectados<tab>máximo<tab>nombre,nombre…
 #
 # Consola compartida (desde la 4.12.0): el servidor corre dentro de tmux (socket propio «minecraft»,
@@ -220,9 +221,18 @@ registro)
     if apagado "$servidor"; then emitir "CONSOLA APAGADO"
     elif compartida "$servidor"; then emitir "CONSOLA COMANDOS"
     else emitir "CONSOLA SOLO_LECTURA"; fi
-    # Sigue el archivo aunque Paper lo cambie al reiniciar (-F); termina cuando el panel lo cancela o
-    # si el Manager se cierra de golpe (--pid: el proceso que lo llamó)
-    tail -n 300 -F --pid="$PPID" -- "$(carpeta_servidor "$servidor")/logs/latest.log" 2>/dev/null | sed -u 's/\r$//; s/^/LINEA /'
+    # Sigue el archivo aunque Paper lo cambie al reiniciar (-F); termina cuando el panel lo cancela, si
+    # el Manager se cierra de golpe (--pid: el proceso que lo llamó) o si nadie lee: cada 15 s escribe
+    # «LATIDO» y, si no puede (se cortó el SSH del celular), corta el tail.
+    tail -n 300 -F --pid="$PPID" -- "$(carpeta_servidor "$servidor")/logs/latest.log" 2>/dev/null \
+        > >(sed -u 's/\r$//; s/^/LINEA /') &
+    cola=$!
+    trap 'kill "$cola" 2>/dev/null' EXIT
+    trap '' PIPE
+    while kill -0 "$cola" 2>/dev/null; do
+        sleep 15
+        printf 'LATIDO\n' 2>/dev/null || break
+    done
     ;;
 
 jugadores)
