@@ -69,12 +69,27 @@ PaginaMinecraft::PaginaMinecraft(const QString &logica, QWidget *parent)
     });
     connect(ui->arbolServidores, &QTreeWidget::itemChanged, this, [this](QTreeWidgetItem *item, int columna) {
         const QString nombre = item->data(0, RolNombre).toString();
+        if (columna == 0 && item->childCount() > 0)
+            clicEnCasilla = true;
         if (columna != 0 || nombre.isEmpty())
             return;
         if (item->checkState(0) == Qt::Checked)
             marcados.insert(nombre);
         else
             marcados.remove(nombre);
+    });
+    // Grupos desplegables: tocar la fila del grupo lo abre o lo cierra, y se recuerda al actualizar la lista
+    // (si el clic fue en la casilla del grupo, solo se marca: itemChanged llega antes que itemClicked)
+    connect(ui->arbolServidores, &QTreeWidget::itemPressed, this, [this] { clicEnCasilla = false; });
+    connect(ui->arbolServidores, &QTreeWidget::itemClicked, this, [this](QTreeWidgetItem *item) {
+        if (item->childCount() > 0 && !clicEnCasilla)
+            item->setExpanded(!item->isExpanded());
+    });
+    connect(ui->arbolServidores, &QTreeWidget::itemExpanded, this, [this](QTreeWidgetItem *item) {
+        gruposAbiertos.insert(item->text(0), true);
+    });
+    connect(ui->arbolServidores, &QTreeWidget::itemCollapsed, this, [this](QTreeWidgetItem *item) {
+        gruposAbiertos.insert(item->text(0), false);
     });
     connect(ui->botonIniciar, &QPushButton::clicked, this, &PaginaMinecraft::iniciar);
     connect(ui->botonDetener, &QPushButton::clicked, this, &PaginaMinecraft::detener);
@@ -280,6 +295,9 @@ void PaginaMinecraft::eventoConsulta(const QString &palabra, const QString &rest
         auto *item = grupo ? new QTreeWidgetItem(grupo) : new QTreeWidgetItem(ui->arbolServidores);
         if (grupo && encendido)
             grupo->setIcon(0, tema::icono(QStringLiteral("punto"), tema::colores().ok));
+        // Cerrados salvo que el usuario lo haya abierto, o que tenga uno encendido o el elegido
+        if (grupo && !gruposAbiertos.contains(grupo->text(0)) && (encendido || nombre == elegido))
+            grupo->setExpanded(true);
         item->setText(0, nombre.section(u'/', -1) + (encendido ? tr("  (encendido)") : QString()));
         item->setIcon(0, tema::icono(QStringLiteral("punto"), encendido ? tema::colores().ok : tema::colores().texto3));
         item->setText(1, (c.at(2) == u"forge" ? QStringLiteral("Forge ") : QStringLiteral("Paper ")) + c.at(3));
@@ -293,6 +311,16 @@ void PaginaMinecraft::eventoConsulta(const QString &palabra, const QString &rest
         item->setData(0, RolTipo, c.at(2));
         item->setFlags(item->flags() | Qt::ItemIsUserCheckable);
         item->setCheckState(0, marcados.contains(nombre) ? Qt::Checked : Qt::Unchecked);
+        if (grupo) {
+            int prendidos = 0;
+            for (int i = 0; i < grupo->childCount(); ++i)
+                prendidos += grupo->child(i)->data(0, RolEncendido).toBool() ? 1 : 0;
+            const int total = grupo->childCount();
+            grupo->setText(1, (total == 1 ? tr("1 servidor") : tr("%1 servidores").arg(total))
+                                  + (prendidos == 0 ? QString()
+                                     : prendidos == 1 ? tr(" · 1 encendido") : tr(" · %1 encendidos").arg(prendidos)));
+            grupo->setForeground(1, prendidos > 0 ? tema::colores().ok : tema::colores().texto3);
+        }
         if (nombre == elegido)
             ui->arbolServidores->setCurrentItem(item);
     } else if (palabra == u"INSTANCIA") {
@@ -385,7 +413,7 @@ QTreeWidgetItem *PaginaMinecraft::filaGrupo(const QString &grupo)
     // No se elige (no es un servidor), pero se puede marcar entero
     fila->setFlags(Qt::ItemIsEnabled | Qt::ItemIsUserCheckable | Qt::ItemIsAutoTristate);
     fila->setCheckState(0, Qt::Unchecked);
-    fila->setExpanded(true);
+    fila->setExpanded(gruposAbiertos.value(grupo, false));
     return fila;
 }
 

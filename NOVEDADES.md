@@ -3,6 +3,10 @@
 Lo que cambió en cada versión. El Manager lo muestra la primera vez que se abre una versión nueva y siempre
 desde el botón del regalito. Los cambios marcados [Sebastián] solo aparecen en sus equipos.
 
+## 4.13.1 (23/11/2026)
+- [Sebastián] Panel de Minecraft: los grupos de servidores se despliegan al tocarlos (arrancan cerrados, salvo
+  el que tenga uno encendido) y muestran cuántos servidores tienen y cuántos están encendidos.
+
 ## 4.13.0 (23/11/2026)
 - [Sebastián] Panel de Minecraft: lee la carpeta nueva de servidores, ordenada por grupo
   (Servidores/<grupo>/<versión>/<servidor>), y la lista los muestra agrupados por esa carpeta.

@@ -8,6 +8,7 @@
 
 #include "ProcesoLogica.h"
 
+#include <QHash>
 #include <QSet>
 #include <QStringList>
 #include <QTimer>
@@ -82,6 +83,8 @@ private:
     bool cancelable = false;   // la acción en curso es un aviso de apagado (se puede cancelar)
     enum class Paso { Servidores, Instancias } paso = Paso::Servidores;
     QSet<QString> marcados;    // servidores marcados (se conservan al actualizar la lista)
+    bool clicEnCasilla = false;
+    QHash<QString, bool> gruposAbiertos;   // lo que el usuario abrió o cerró (si no, cerrados salvo con uno encendido)
     QString elegido;           // el servidor elegido (se conserva al actualizar la lista)
     QString pluginsDe;         // de qué servidor es la lista de plugins
     int pluginsNuevos = 0;
