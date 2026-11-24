@@ -1,5 +1,6 @@
 // Página «Panel de Minecraft»: los servidores de Minecraft Servers/Servidores (crear con un asistente, iniciar,
-// detener, reiniciar, Paper automático, RAM, reiniciar mundo), la consola del elegido (registro en vivo,
+// detener, reiniciar, Paper automático, RAM, reiniciar mundo, cambiar versión; jugadores, opciones y
+// respaldos en PestanasMinecraft; apagado automático en Logica/Minecraft.sh vigilar), la consola del elegido (registro en vivo,
 // conectados y comandos; desde la 4.12.0 corren en tmux), sus plugins (reconocidos en Modrinth, con
 // actualización) y Prism Launcher. Solo es la interfaz; la lógica está en Logica/Minecraft.sh.
 // El respaldo de Minecraft tiene su propia página (PaginaRespaldo).
@@ -14,7 +15,12 @@
 #include <QTimer>
 #include <QWidget>
 
+class QPushButton;
 class QTreeWidgetItem;
+class PestanaServidor;
+class PestanaJugadores;
+class PestanaOpciones;
+class PestanaRespaldos;
 
 namespace Ui { class PaginaMinecraft; }
 
@@ -49,6 +55,10 @@ private:
     void instalarPlugin();
     void jugar();
     void crearServidor();     // asistente (AsistenteMinecraft) + «Minecraft.sh crear»
+    void cambiarVersion();    // DialogoVersionMinecraft + «Minecraft.sh cambiar»
+    void packJugadores();     // .mrpack con los mods para los jugadores
+    void actualizarPestanas();
+    QList<PestanaServidor *> pestanas() const;
     void verConsola();             // registro en vivo del elegido (se corta al cambiar o al salir)
     void consultarJugadores();
     void enviarComando();
@@ -83,6 +93,10 @@ private:
     int posHistorial = 0;
     bool cancelable = false;   // la acción en curso es un aviso de apagado (se puede cancelar)
     bool creando = false;      // la acción en curso es crear un servidor (se puede cancelar: no queda nada)
+    PestanaJugadores *pestanaJugadores;
+    PestanaOpciones *pestanaOpciones;
+    PestanaRespaldos *pestanaRespaldos;
+    QPushButton *botonCambiarVersion, *botonPack;
     bool pluginsSonMods = false;   // el servidor de la pestaña es Fabric/Forge (mods/) y no Paper (plugins/)
     enum class Paso { Servidores, Instancias } paso = Paso::Servidores;
     QSet<QString> marcados;    // servidores marcados (se conservan al actualizar la lista)

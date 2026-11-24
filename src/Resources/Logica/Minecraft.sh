@@ -23,6 +23,20 @@
 #      Minecraft.sh buscar-modrinth complemento|modpack TIPO VERSION TEXTO   (asistente) proyectos de Modrinth que sirven
 #      Minecraft.sh modpack-versiones SLUG           (asistente) versiones de un modpack que se pueden usar
 #      Minecraft.sh crear < configuración           arma un servidor nuevo (ver «crear» más abajo); aparece solo en la lista
+#      Minecraft.sh cambiar SERVIDOR < TIPO/VERSION  otro software o versión (o actualizar el cargador), guardando el mundo antes
+#      Minecraft.sh jugadores-lista SERVIDOR         quién entró, ops, lista blanca y baneados (JUGADOR …)
+#      Minecraft.sh jugador SERVIDOR ACCION [NOMBRE] [MOTIVO]   op|deop|whitelist-add|whitelist-remove|ban|pardon|kick|
+#                                                    lista-blanca-si|lista-blanca-no (prendido: con comandos; apagado: en los .json)
+#      Minecraft.sh opciones-servidor SERVIDOR       server.properties con explicación (OPCION …) y ajustes del Manager (AJUSTE …)
+#      Minecraft.sh propiedades-cambiar SERVIDOR < clave=valor   las cambia (solo las conocidas; también APAGAR_VACIO/APAGAR_PC)
+#      Minecraft.sh ajuste SERVIDOR APAGAR_VACIO|APAGAR_PC VALOR   apagado automático (minutos, 0 = nunca) y si apaga la PC
+#      Minecraft.sh icono SERVIDOR IMAGEN.png        server-icon.png (PNG de 64×64)
+#      Minecraft.sh respaldos SERVIDOR               mundos guardados y jars/plugins/mods reemplazados (RESPALDO …)
+#      Minecraft.sh respaldo-guardar SERVIDOR        guarda el mundo ahora (prendido: con save-off/save-all/save-on)
+#      Minecraft.sh restaurar SERVIDOR mundo|jar|plugin|mod ARCHIVO   vuelve a un respaldo (guarda antes lo que hay)
+#      Minecraft.sh pack-jugadores SERVIDOR DESTINO.mrpack   los mods que necesitan los jugadores (Fabric/Forge)
+#      Minecraft.sh extra SERVIDOR geyser|bluemap    Geyser + Floodgate (Bedrock) o BlueMap (mapa web)
+#      Minecraft.sh vigilar SERVIDOR                 (interno) apagado automático sin jugadores; lo lanza «iniciar»
 #      Minecraft.sh consola SERVIDOR                 (interno) lo que corre dentro de tmux
 #      Minecraft.sh instancias                       instancias de Prism Launcher
 #      Minecraft.sh prism "INSTANCIA"                abre la instancia y entra al servidor de casa
@@ -38,7 +52,8 @@
 #   LATIDO               (registro: cada 15 s, para notar si se cortó la conexión; se ignora)
 #   JUGADORES conectados<tab>máximo<tab>nombre,nombre…
 #   VERSION v<tab>software,…   GRUPO g   JAVA n   RESULTADO …   MODPACK …   (asistente, ver minecraft_api.py)
-#   CREADO <servidor>    (crear: la ruta del servidor nuevo)
+#   CREADO <servidor>    (crear y cambiar: la ruta del servidor, que en cambiar puede ser otra)
+#   SERVIDOR … tiene un noveno campo desde la 4.15.0: en cuántos minutos se apaga solo (vacío si no está por apagarse)
 #
 # Consola compartida (desde la 4.12.0): el servidor corre dentro de tmux (socket propio «minecraft»,
 # sesión «mc-<servidor>»), así sigue prendido aunque se cierre la terminal o el Manager, y el panel
@@ -73,6 +88,28 @@ servidor_valido() {
 apagado() {
     [[ -z "$(pid_servidor "$(carpeta_servidor "$1")")" ]]
 }
+# Cambia un ajuste del Manager en servidor.conf (comprobándolo) y dice qué quedó. Uso: aplicar_ajuste SERVIDOR CLAVE VALOR
+aplicar_ajuste() {
+    local texto
+    case "$2" in
+        APAGAR_VACIO) [[ "$3" =~ ^[0-9]{1,3}$ ]] && (( 10#$3 <= 720 )) || { emitir "ERROR Minutos: de 0 (nunca) a 720." >&3; return 2; }
+                      texto=$( (( 10#$3 == 0 )) && echo "no se apaga solo" || echo "se apaga solo a los $((10#$3)) minutos sin jugadores") ;;
+        APAGAR_PC)    [[ "$3" =~ ^(si|no)$ ]] || { emitir "ERROR APAGAR_PC tiene que ser si o no." >&3; return 2; }
+                      texto=$([[ "$3" == si ]] && echo "si apagarlo deja la PC sin uso, la apaga (solo si la prendió el WOL)" || echo "nunca apaga la PC") ;;
+        *) emitir "ERROR Ajuste desconocido." >&3; return 2 ;;
+    esac
+    cambiar_conf "$1" "$2" "$3"
+    printf '%s\n' "$texto"
+}
+# Un mundo de Paper (26.x) para el juego normal (Vanilla, Fabric, Forge): Paper guarda world_gen_settings.dat en
+# cada dimensión (dimensions/minecraft/overworld/data/…) y el juego lo busca en data/minecraft/ del mundo; sin él,
+# el servidor se cuelga con «Overworld settings missing». Uso: mundo_desde_paper CARPETA_DEL_MUNDO
+mundo_desde_paper() {
+    local m="$1" origen="$1/dimensions/minecraft/overworld/data/minecraft/world_gen_settings.dat"
+    if [[ -f "$origen" && ! -f "$m/data/minecraft/world_gen_settings.dat" ]]; then
+        mkdir -p "$m/data/minecraft" && cp -- "$origen" "$m/data/minecraft/world_gen_settings.dat"
+    fi
+}
 # ¿El .jar es un plugin de Paper, o un mod del cargador del servidor? (mira qué trae adentro)
 complemento_sirve() {   # archivo tipo
     local lista; lista=$(unzip -Z1 "$1" 2>/dev/null) || return 1
@@ -92,6 +129,14 @@ mc_tmux() { tmux -L "$TMUX_SOCKET" -f /dev/null "$@"; }
 # Nombre de la sesión de tmux («Amigos/26.1/26.1.2 SMP-1» → «mc-Amigos_26_1_26_1_2_SMP-1»: tmux no acepta
 # puntos ni dos puntos)
 sesion() { local s="$1"; printf 'mc-%s\n' "${s//[^A-Za-z0-9_-]/_}"; }
+# Carpeta de estado del apagado automático: la misma desde el panel y desde el celular (por SSH puede no estar
+# XDG_RUNTIME_DIR), así hay un solo vigilante por servidor
+dir_estado() {
+    local d="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+    [[ -d "$d" && -w "$d" ]] || d="/tmp/arch-linux-manager-$(id -u)"
+    mkdir -p "$d/arch-linux-manager" 2>/dev/null
+    printf '%s\n' "$d/arch-linux-manager"
+}
 # ¿Corre en tmux? (si se prendió de otra forma no se le pueden mandar comandos)
 compartida() {
     command -v tmux &>/dev/null && mc_tmux has-session -t "=$(sesion "$1")" 2>/dev/null
@@ -116,6 +161,37 @@ arrancar() {
     else
         setsid -f konsole --workdir "$carpeta" -p tabtitle="$(nombre_visible "$1")" -e "$AQUI/Minecraft.sh" consola "$1" &>/dev/null
     fi
+    # Apagado automático (ver «vigilar»)
+    [[ "${MINECRAFT_VIGILAR:-1}" == 0 ]] || setsid -f bash "$AQUI/Minecraft.sh" vigilar "$1" &>/dev/null < /dev/null
+}
+# Guarda el mundo (con su nether y end) en Respaldos/<servidor>/mundos/<mundo>[-etiqueta]-<fecha>.tar.zst y dice
+# la ruta. Si está prendido, pausa el guardado del servidor mientras copia (save-off, save-all flush, save-on).
+# Los mensajes van por el fd 3 (se la llama dentro de $( )). Uso: archivo=$(guardar_mundo SERVIDOR [etiqueta])
+guardar_mundo() {
+    local servidor="$1" etiqueta="${2:+-$2}" carpeta mundo m destino archivo prendido=0 lineas i partes=()
+    carpeta=$(carpeta_servidor "$servidor"); mundo=$(mundo_servidor "$servidor")
+    for m in "$mundo" "${mundo}_nether" "${mundo}_the_end"; do [[ -d "$carpeta/$m" ]] && partes+=("$m"); done
+    (( ${#partes[@]} )) || { printf 'ERROR %s todavía no tiene mundo.\n' "$(nombre_visible "$servidor")" >&3; return 1; }
+    if ! apagado "$servidor"; then
+        compartida "$servidor" || { printf 'ERROR %s se prendió sin consola compartida: detenelo para guardar el mundo.\n' "$(nombre_visible "$servidor")" >&3; return 1; }
+        prendido=1
+        lineas=$(wc -l < "$carpeta/logs/latest.log" 2>/dev/null || echo 0)
+        enviar "$servidor" "save-off"; enviar "$servidor" "save-all flush"
+        printf 'ETAPA Esperando que el servidor termine de guardar\n' >&3
+        for (( i = 0; i < 60; i++ )); do
+            tail -n +"$((lineas + 1))" "$carpeta/logs/latest.log" 2>/dev/null | grep -q 'Saved the game' && break
+            sleep 0.5
+        done
+    fi
+    destino="$RESPALDOS_MC_DIR/$servidor/mundos"; mkdir -p "$destino"
+    archivo="$destino/$mundo$etiqueta-$(date +%Y-%m-%d_%H-%M-%S).tar.zst"
+    printf 'ETAPA Guardando el mundo de %s (puede tardar)\n' "$(nombre_visible "$servidor")" >&3
+    if ! tar --zstd -cf "$archivo" -C "$carpeta" "${partes[@]}"; then
+        rm -f "$archivo"; (( prendido )) && enviar "$servidor" "save-on"
+        printf 'ERROR No se pudo guardar el mundo.\n' >&3; return 1
+    fi
+    (( prendido )) && enviar "$servidor" "save-on"
+    printf '%s\n' "$archivo"
 }
 # Abre la consola en una terminal que se puede cerrar sin apagar el servidor
 abrir_terminal() {
@@ -154,6 +230,79 @@ detener() {
     error "$(nombre_visible "$1") no se detuvo después de 2 minutos."
 }
 
+# --- Instalar el software de un servidor (lo usan crear y cambiar) --------------------------------------
+exec 3>&1    # los ERROR de api_linea van directo al panel aunque se la llame dentro de $( )
+# La primera línea de minecraft_api.py que empieza con PREFIJO; si no hay, avisa su ERROR y falla.
+# Uso: linea=$(api_linea PREFIJO orden argumentos...) || exit 1
+api_linea() {
+    local prefijo="$1" salida motivo; shift
+    salida=$(python3 -I "$API" "$@" 2>&1)
+    if grep -q "^$prefijo " <<< "$salida"; then grep -m1 "^$prefijo " <<< "$salida"; return 0; fi
+    motivo=$(grep -m1 '^ERROR ' <<< "$salida" | cut -d' ' -f2-)
+    printf 'ERROR %s\n' "${motivo:-No hubo respuesta de internet (o fue rara) en «$1».}" >&3
+    return 1
+}
+# Qué pide esa versión: deja url_vanilla, sha1_vanilla, java_pedido, bin_java y java_n (el Java que se va a usar)
+preparar_version() {
+    local linea
+    emitir "ETAPA Consultando Mojang ($1)"
+    linea=$(api_linea VANILLA vanilla "$1") || exit 1
+    read -r _ url_vanilla sha1_vanilla java_pedido <<< "$linea"
+    url_valida "$url_vanilla" && [[ "$sha1_vanilla" =~ ^[0-9a-f]{40}$ && "$java_pedido" =~ ^[0-9]{1,2}$ ]] || error "Respuesta rara de Mojang."
+    bin_java=$(java_para "$java_pedido") || error "Minecraft $1 necesita Java $java_pedido (o más nuevo) y no está instalado: sudo pacman -S jre$java_pedido-openjdk"
+    java_n="${bin_java%/bin}"; java_n="${java_n%/jre}"; java_n="${java_n##*/java-}"; java_n="${java_n%-openjdk}"
+    (( java_n == java_pedido )) || emitir "AVISO Minecraft $1 pide Java $java_pedido; no está, así que uso Java $java_n (si no arranca: sudo pacman -S jre$java_pedido-openjdk)."
+}
+# Baja e instala el software en la carpeta (después de preparar_version). Deja jar (vacío si arranca con
+# run.sh) y loader (la versión de Fabric/Forge que quedó). Uso: instalar_software TIPO VERSION LOADER RAM CARPETA
+instalar_software() {
+    local tipo="$1" version="$2" ram="$4" dir="$5" linea build sha256 sha1 url f
+    loader="$3"; jar=""
+    case "$tipo" in
+        vanilla)
+            emitir "ETAPA Bajando el servidor oficial de Minecraft $version"
+            descargar_jar "$url_vanilla" "sha1:$sha1_vanilla" "$dir/server.jar" || error "No se pudo bajar el servidor de Minecraft (o la suma no coincide)."
+            jar=server.jar ;;
+        paper)
+            emitir "ETAPA Buscando la última compilación de Paper $version"
+            linea=$(api_linea PAPER paper "$version") || { emitir "ERROR Paper no tiene una compilación estable para $version."; exit 1; }
+            read -r _ build jar sha256 url <<< "$linea"
+            [[ "$jar" =~ ^[A-Za-z0-9._\-]+\.jar$ ]] && url_valida "$url" || error "Respuesta rara de PaperMC."
+            emitir "ETAPA Bajando Paper $version compilación $build"
+            descargar_jar "$url" "sha256:$sha256" "$dir/$jar" || error "No se pudo bajar Paper (o la suma no coincide)." ;;
+        fabric)
+            emitir "ETAPA Buscando Fabric para $version"
+            linea=$(api_linea FABRIC fabric "$version" ${loader:+"$loader"}) || exit 1
+            read -r _ loader jar url <<< "$linea"
+            [[ "$jar" =~ ^[A-Za-z0-9._+\-]+\.jar$ ]] && url_valida "$url" || error "Respuesta rara de Fabric."
+            emitir "ETAPA Bajando Fabric $loader"
+            descargar_jar "$url" - "$dir/$jar" || error "No se pudo bajar Fabric."
+            # El lanzador de Fabric usa server.jar: se baja ya (comprobado) para que el primer arranque no lo busque
+            emitir "ETAPA Bajando el servidor oficial de Minecraft $version"
+            descargar_jar "$url_vanilla" "sha1:$sha1_vanilla" "$dir/server.jar" || error "No se pudo bajar el servidor de Minecraft." ;;
+        forge)
+            emitir "ETAPA Buscando Forge para $version"
+            linea=$(api_linea FORGE forge "$version" ${loader:+"$loader"}) || exit 1
+            read -r _ loader url sha1 <<< "$linea"
+            url_valida "$url" && [[ "$sha1" =~ ^[0-9a-f]{40}$ ]] || error "Respuesta rara de Forge."
+            emitir "ETAPA Bajando el instalador de Forge $loader"
+            descargar_jar "$url" "sha1:$sha1" "$dir/forge-instalador.jar" || error "No se pudo bajar Forge (o la suma no coincide)."
+            emitir "ETAPA Instalando Forge $loader (baja sus librerías: puede tardar unos minutos)"
+            ( cd "$dir" && "$bin_java/java" -jar forge-instalador.jar --installServer ) > "$dir/.forge-instalador.log" 2>&1 \
+                || error "El instalador de Forge falló: $(tail -n 3 "$dir/.forge-instalador.log" | tr '\n' ' ')"
+            rm -f "$dir"/forge-instalador.jar "$dir"/forge-instalador.jar.log "$dir"/.forge-instalador.log "$dir"/installer.log
+            if [[ -f "$dir/run.sh" ]]; then
+                { grep -v -- '^-Xmx' "$dir/user_jvm_args.txt" 2>/dev/null; printf -- '-Xmx%s\n' "$ram"; } > "$dir/.jvm" && mv -f "$dir/.jvm" "$dir/user_jvm_args.txt"
+            else
+                # Los Forge viejos no tienen run.sh: se arrancan con su jar
+                for f in "$dir"/forge-*.jar; do
+                    [[ -f "$f" && "$f" != *installer* && "$f" != *instalador* ]] && { jar=$(basename "$f"); break; }
+                done
+                [[ -n "$jar" ]] || error "Forge se instaló pero no encuentro cómo arrancarlo."
+            fi ;;
+    esac
+}
+
 case "${1:-}" in
 servidores)
     while IFS= read -r servidor; do
@@ -163,8 +312,14 @@ servidores)
         tam=$(du -sh "$carpeta/$(mundo_servidor "$servidor")" 2>/dev/null | cut -f1)
         ultimo=$(stat -c %Y "$carpeta/logs/latest.log" 2>/dev/null)
         [[ -n "$ultimo" ]] && ultimo=$(date -d "@$ultimo" +%Y-%m-%d)
-        printf 'SERVIDOR %s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$estado" "$servidor" "$CONF_TIPO" "$CONF_VERSION" \
-            "${tam:--}" "${ultimo:--}" "$CONF_RAM" "${CONF_JAR:-run.sh}"
+        apaga=""
+        marca="$(dir_estado)/vacio-$(sesion "$servidor")"
+        if [[ "$estado" == ENCENDIDO && -f "$marca" ]]; then
+            apaga=$(( ($(cat "$marca" 2>/dev/null || echo 0) - $(date +%s) + 59) / 60 ))
+            (( apaga >= 0 )) || apaga=0
+        fi
+        printf 'SERVIDOR %s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$estado" "$servidor" "$CONF_TIPO" "$CONF_VERSION" \
+            "${tam:--}" "${ultimo:--}" "$CONF_RAM" "${CONF_JAR:-run.sh}" "$apaga"
     done < <(listar_servidores)
     ;;
 
@@ -198,6 +353,12 @@ iniciar)
     while IFS= read -r otro; do
         [[ "$otro" != "$servidor" ]] && ! apagado "$otro" && error "Ya está encendido «$(nombre_visible "$otro")» (usan el mismo puerto). Detenelo primero."
     done < <(listar_servidores)
+    # BlueMap baja recursos del juego solo si se acepta (se aceptó al instalarlo con «extra bluemap»)
+    if [[ -f "$(carpeta_servidor "$servidor")/.bluemap-aceptado" ]]; then
+        for f in "$(carpeta_servidor "$servidor")"/{plugins/BlueMap,config/bluemap}/core.conf; do
+            [[ -f "$f" ]] && sed -i 's/^accept-download: *false/accept-download: true/' "$f"
+        done
+    fi
     arrancar "$servidor"
     abrir_terminal "$servidor"
     emitir "LISTO $NV iniciado."
@@ -406,11 +567,7 @@ reiniciar-mundo)
     partes=()
     for m in "$mundo" "${mundo}_nether" "${mundo}_the_end"; do [[ -d "$carpeta/$m" ]] && partes+=("$m"); done
     (( ${#partes[@]} )) || { emitir "LISTO $NV no tenía mundo: se crea uno nuevo al iniciarlo."; exit 0; }
-    destino="$RESPALDOS_MC_DIR/$servidor/mundos"
-    mkdir -p "$destino"
-    archivo="$destino/$mundo-$(date +%Y-%m-%d_%H-%M-%S).tar.zst"
-    emitir "ETAPA Guardando el mundo en Respaldos (puede tardar)"
-    tar --zstd -cf "$archivo" -C "$carpeta" "${partes[@]}" || { rm -f "$archivo"; error "No se pudo guardar el mundo: no se borró nada."; }
+    archivo=$(guardar_mundo "$servidor") || error "No se pudo guardar el mundo: no se borró nada."
     for m in "${partes[@]}"; do rm -rf -- "${carpeta:?}/$m"; done
     emitir "LISTO Mundo de $NV reiniciado. El anterior quedó en Respaldos/$servidor/mundos/$(basename "$archivo")."
     ;;
@@ -550,25 +707,7 @@ crear)
     chmod 755 "$tmpd"
     trap 'rm -rf "$tmpd"' EXIT
     trap 'exit 130' TERM INT HUP
-    exec 3>&1    # los ERROR de api_linea van directo al panel aunque se la llame dentro de $( )
-    # La primera línea de minecraft_api.py que empieza con PREFIJO; si no hay, avisa su ERROR y falla.
-    # Uso: linea=$(api_linea PREFIJO orden argumentos...) || exit 1
-    api_linea() {
-        local prefijo="$1" salida motivo; shift
-        salida=$(python3 -I "$API" "$@" 2>&1)
-        if grep -q "^$prefijo " <<< "$salida"; then grep -m1 "^$prefijo " <<< "$salida"; return 0; fi
-        motivo=$(grep -m1 '^ERROR ' <<< "$salida" | cut -d' ' -f2-)
-        printf 'ERROR %s\n' "${motivo:-No hubo respuesta de internet (o fue rara) en «$1».}" >&3
-        return 1
-    }
-
-    emitir "ETAPA Consultando Mojang ($version)"
-    linea=$(api_linea VANILLA vanilla "$version") || exit 1
-    read -r _ url_vanilla sha1_vanilla java_pedido <<< "$linea"
-    url_valida "$url_vanilla" && [[ "$sha1_vanilla" =~ ^[0-9a-f]{40}$ && "$java_pedido" =~ ^[0-9]{1,2}$ ]] || error "Respuesta rara de Mojang."
-    bin_java=$(java_para "$java_pedido") || error "Minecraft $version necesita Java $java_pedido (o más nuevo) y no está instalado: sudo pacman -S jre$java_pedido-openjdk"
-    java_n="${bin_java%/bin}"; java_n="${java_n%/jre}"; java_n="${java_n##*/java-}"; java_n="${java_n%-openjdk}"
-    (( java_n == java_pedido )) || emitir "AVISO Minecraft $version pide Java $java_pedido; no está, así que uso Java $java_n (si no arranca: sudo pacman -S jre$java_pedido-openjdk)."
+    preparar_version "$version"
 
     # Modpack primero: dice qué versión del cargador hace falta y trae sus mods y configuraciones
     if [[ -n "${C[MODPACK_URL]:-}${C[MODPACK_ARCHIVO]:-}" ]]; then
@@ -593,53 +732,10 @@ crear)
         done < <(python3 -I "$API" mrpack "$pack" "$tmpd" "$tipo" "$version" 2>&1; echo "FIN $?")
         [[ "$codigo" == 0 ]] || error "${motivo:-El modpack no se pudo instalar.}"
         [[ "$loader" =~ ^[0-9A-Za-z.+-]{1,40}$ ]] || error "El modpack no dice qué versión de $(nombre_tipo "$tipo") usa."
-        rm -f "$pack"
+        # (queda como .modpack.mrpack: el pack para los jugadores parte de él, con lo que es solo del cliente)
     fi
 
-    jar=""
-    case "$tipo" in
-        vanilla)
-            emitir "ETAPA Bajando el servidor oficial de Minecraft $version"
-            descargar_jar "$url_vanilla" "sha1:$sha1_vanilla" "$tmpd/server.jar" || error "No se pudo bajar el servidor de Minecraft (o la suma no coincide)."
-            jar=server.jar ;;
-        paper)
-            emitir "ETAPA Buscando la última compilación de Paper $version"
-            linea=$(api_linea PAPER paper "$version") || { emitir "ERROR Paper no tiene una compilación estable para $version."; exit 1; }
-            read -r _ build jar sha256 url <<< "$linea"
-            [[ "$jar" =~ ^[A-Za-z0-9._\-]+\.jar$ ]] && url_valida "$url" || error "Respuesta rara de PaperMC."
-            emitir "ETAPA Bajando Paper $version compilación $build"
-            descargar_jar "$url" "sha256:$sha256" "$tmpd/$jar" || error "No se pudo bajar Paper (o la suma no coincide)." ;;
-        fabric)
-            emitir "ETAPA Buscando Fabric para $version"
-            linea=$(api_linea FABRIC fabric "$version" ${loader:+"$loader"}) || exit 1
-            read -r _ loader jar url <<< "$linea"
-            [[ "$jar" =~ ^[A-Za-z0-9._+\-]+\.jar$ ]] && url_valida "$url" || error "Respuesta rara de Fabric."
-            emitir "ETAPA Bajando Fabric $loader"
-            descargar_jar "$url" - "$tmpd/$jar" || error "No se pudo bajar Fabric."
-            # El lanzador de Fabric usa server.jar: se baja ya (comprobado) para que el primer arranque no lo busque
-            emitir "ETAPA Bajando el servidor oficial de Minecraft $version"
-            descargar_jar "$url_vanilla" "sha1:$sha1_vanilla" "$tmpd/server.jar" || error "No se pudo bajar el servidor de Minecraft." ;;
-        forge)
-            emitir "ETAPA Buscando Forge para $version"
-            linea=$(api_linea FORGE forge "$version" ${loader:+"$loader"}) || exit 1
-            read -r _ loader url sha1 <<< "$linea"
-            url_valida "$url" && [[ "$sha1" =~ ^[0-9a-f]{40}$ ]] || error "Respuesta rara de Forge."
-            emitir "ETAPA Bajando el instalador de Forge $loader"
-            descargar_jar "$url" "sha1:$sha1" "$tmpd/forge-instalador.jar" || error "No se pudo bajar Forge (o la suma no coincide)."
-            emitir "ETAPA Instalando Forge $loader (baja sus librerías: puede tardar unos minutos)"
-            ( cd "$tmpd" && "$bin_java/java" -jar forge-instalador.jar --installServer ) > "$tmpd/.forge-instalador.log" 2>&1 \
-                || error "El instalador de Forge falló: $(tail -n 3 "$tmpd/.forge-instalador.log" | tr '\n' ' ')"
-            rm -f "$tmpd"/forge-instalador.jar "$tmpd"/forge-instalador.jar.log "$tmpd"/.forge-instalador.log "$tmpd"/installer.log
-            if [[ -f "$tmpd/run.sh" ]]; then
-                printf -- '-Xmx%s\n' "$ram" >> "$tmpd/user_jvm_args.txt"
-            else
-                # Los Forge viejos no tienen run.sh: se arrancan con su jar
-                for f in "$tmpd"/forge-*.jar; do
-                    [[ -f "$f" && "$f" != *installer* && "$f" != *instalador* ]] && { jar=$(basename "$f"); break; }
-                done
-                [[ -n "$jar" ]] || error "Forge se instaló pero no encuentro cómo arrancarlo."
-            fi ;;
-    esac
+    instalar_software "$tipo" "$version" "$loader" "$ram" "$tmpd"
 
     printf 'eula=true\n' > "$tmpd/eula.txt"
     # server.properties (las versiones de antes de la 1.13 usan números para el modo y la dificultad)
@@ -662,6 +758,7 @@ crear)
               && "$(printf '%s\n%s\n' "$version_mundo" "$version" | sort -V | tail -n1)" == "$version_mundo" ]]; then
             error "El mundo es de Minecraft $version_mundo: no se puede abrir en $version (más vieja) sin romperlo."
         fi
+        [[ "$tipo" == paper ]] || mundo_desde_paper "$tmpd/world"
         [[ "$version_mundo" == "?" ]] && emitir "AVISO No pude saber de qué versión es el mundo: si es de una más nueva que $version, no va a abrir."
         [[ "$version_mundo" != "?" && "$version_mundo" != "$version" ]] && emitir "AVISO El mundo es de $version_mundo: Minecraft lo actualiza a $version al abrirlo (no se puede volver atrás)."
     fi
@@ -696,6 +793,443 @@ crear)
     rmdir "$MINECRAFT_DIR/.creando" 2>/dev/null
     emitir "CREADO $servidor"
     emitir "LISTO $NV creado ($(nombre_tipo "$tipo") $version${loader:+, cargador $loader}, Java $java_n). Ya se puede iniciar."
+    ;;
+
+jugadores-lista)
+    servidor="${2:-}"; servidor_valido "$servidor"
+    carpeta=$(carpeta_servidor "$servidor")
+    conectados=""
+    if ! apagado "$servidor"; then
+        compartida "$servidor" && emitir "CONSOLA COMANDOS" || emitir "CONSOLA SOLO_LECTURA"
+        puerto=$(sed -n 's/^server-port=//p' "$carpeta/server.properties" 2>/dev/null | head -n1 | tr -d '\r ')
+        [[ "$puerto" =~ ^[0-9]{1,5}$ ]] || puerto=25565
+        conectados=$(python3 -I "$API" ping "$puerto" 2>/dev/null | sed -n 's/^JUGADORES [0-9]*\t[0-9]*\t//p')
+    else
+        emitir "CONSOLA APAGADO"
+    fi
+    blanca=$(python3 -I "$API" opciones-servidor "$carpeta" 2>/dev/null | awk -F'\t' '$1=="OPCION white-list" {print $6}')
+    emitir "LISTA_BLANCA ${blanca:-false}"
+    python3 -I "$API" jugadores-listar "$carpeta" "$conectados" 2>/dev/null | grep '^JUGADOR '
+    exit 0
+    ;;
+
+jugador)
+    servidor="${2:-}"; servidor_valido "$servidor"
+    accion="${3:-}"; nombre="${4:-}"; motivo="${5:-}"
+    [[ "$accion" =~ ^(op|deop|whitelist-add|whitelist-remove|ban|pardon|kick|lista-blanca-si|lista-blanca-no)$ ]] || error "Acción de jugador desconocida." 2
+    if [[ "$accion" != lista-blanca-* ]]; then
+        [[ "$nombre" =~ ^\.?[A-Za-z0-9_]{1,16}$ ]] || error "Nombre de jugador raro (hasta 16 letras, números o _)." 2
+    fi
+    [[ "$motivo" != *[[:cntrl:]]* ]] && (( ${#motivo} <= 100 )) || error "El motivo es demasiado largo o tiene caracteres raros." 2
+    carpeta=$(carpeta_servidor "$servidor")
+    declare -A que=([op]="ahora es operador" [deop]="ya no es operador" [whitelist-add]="está en la lista blanca"
+                    [whitelist-remove]="salió de la lista blanca" [ban]="está baneado" [pardon]="ya no está baneado"
+                    [kick]="fue expulsado" [lista-blanca-si]="Lista blanca activada" [lista-blanca-no]="Lista blanca desactivada")
+    if ! apagado "$servidor"; then
+        # Prendido: lo hace el servidor (si se tocaran sus archivos, los pisaría al apagarse)
+        compartida "$servidor" || error "$NV se prendió sin consola compartida: reinicialo desde el panel para administrar jugadores."
+        case "$accion" in
+            op|deop|pardon) comando="$accion $nombre" ;;
+            whitelist-add)    comando="whitelist add $nombre" ;;
+            whitelist-remove) comando="whitelist remove $nombre" ;;
+            ban|kick)         comando="$accion $nombre${motivo:+ $motivo}" ;;
+            lista-blanca-si)  comando="whitelist on" ;;
+            lista-blanca-no)  comando="whitelist off" ;;
+        esac
+        enviar "$servidor" "$comando" || error "No se pudo escribir en la consola de $NV."
+    else
+        case "$accion" in
+            kick) error "$NV está apagado: no hay a quién expulsar." ;;
+            lista-blanca-si|lista-blanca-no)
+                valor=$([[ "$accion" == lista-blanca-si ]] && echo true || echo false)
+                leer_conf "$servidor"
+                python3 -I "$API" propiedades-cambiar "$carpeta/server.properties" "$CONF_VERSION" "white-list=$valor" "enforce-whitelist=$valor" &>/dev/null \
+                    || error "No se pudo cambiar server.properties." ;;
+            *)
+                online=$(python3 -I "$API" opciones-servidor "$carpeta" 2>/dev/null | awk -F'\t' '$1=="OPCION online-mode" {print $6}')
+                salida=$(python3 -I "$API" jugador-editar "$carpeta" "$accion" "$nombre" "$motivo" "${online:-true}" 2>&1) \
+                    || error "$(sed -n 's/^ERROR //p' <<< "$salida" | head -n1)"
+                grep '^AVISO ' <<< "$salida" ;;
+        esac
+    fi
+    if [[ "$accion" == lista-blanca-* ]]; then emitir "LISTO ${que[$accion]} en $NV."
+    else emitir "LISTO $nombre ${que[$accion]} en $NV."; fi
+    ;;
+
+opciones-servidor)
+    servidor="${2:-}"; servidor_valido "$servidor"
+    leer_conf "$servidor"
+    python3 -I "$API" opciones-servidor "$(carpeta_servidor "$servidor")" 2>/dev/null | grep '^OPCION '
+    # Las del Manager (servidor.conf)
+    printf 'AJUSTE RAM\t%s\nAJUSTE APAGAR_VACIO\t%s\nAJUSTE APAGAR_PC\t%s\n' "$CONF_RAM" "$CONF_APAGAR_VACIO" "$CONF_APAGAR_PC"
+    [[ -f "$(carpeta_servidor "$servidor")/server-icon.png" ]] && emitir "ICONO si" || emitir "ICONO no"
+    exit 0
+    ;;
+
+propiedades-cambiar)
+    # Las opciones llegan por stdin (clave=valor por línea; los saltos de línea del MOTD como \n)
+    servidor="${2:-}"; servidor_valido "$servidor"
+    leer_conf "$servidor"
+    # (también APAGAR_VACIO= y APAGAR_PC=, que van a servidor.conf)
+    pares=(); ajustes=()
+    while IFS= read -r linea; do
+        case "$linea" in
+            APAGAR_VACIO=*|APAGAR_PC=*) ajustes+=("$linea") ;;
+            [a-z0-9]*=*) pares+=("$linea") ;;
+        esac
+    done < <(head -n 60)
+    (( ${#pares[@]} + ${#ajustes[@]} )) || error "No hay nada para cambiar." 2
+    for a in "${ajustes[@]}"; do aplicar_ajuste "$servidor" "${a%%=*}" "${a#*=}" > /dev/null || exit 2; done
+    if (( ${#pares[@]} )); then
+        salida=$(python3 -I "$API" propiedades-cambiar "$(carpeta_servidor "$servidor")/server.properties" "$CONF_VERSION" "${pares[@]}" 2>&1) \
+            || error "$(sed -n 's/^ERROR //p' <<< "$salida" | head -n1)"
+    fi
+    apagado "$servidor" && emitir "LISTO Opciones de $NV guardadas." || emitir "LISTO Opciones de $NV guardadas: se aplican al reiniciarlo."
+    ;;
+
+ajuste)
+    servidor="${2:-}"; servidor_valido "$servidor"
+    texto=$(aplicar_ajuste "$servidor" "${3:-}" "${4:-}") || exit 2
+    emitir "LISTO $NV: $texto."
+    ;;
+
+icono)
+    servidor="${2:-}"; servidor_valido "$servidor"
+    archivo="${3:-}"
+    [[ "$archivo" == /* && -f "$archivo" ]] || error "No encuentro la imagen." 2
+    python3 -I "$API" png64 "$archivo" &>/dev/null || error "El ícono tiene que ser un PNG de 64×64." 2
+    cp -- "$archivo" "$(carpeta_servidor "$servidor")/server-icon.png" || error "No se pudo copiar el ícono."
+    apagado "$servidor" && emitir "LISTO Ícono de $NV cambiado." || emitir "LISTO Ícono de $NV cambiado: se ve al reiniciarlo."
+    ;;
+
+respaldos)
+    servidor="${2:-}"; servidor_valido "$servidor"
+    base="$RESPALDOS_MC_DIR/$servidor"
+    shopt -s nullglob
+    for f in "$base"/mundos/*.tar.zst "$base"/viejo/*.jar "$base"/plugins/*.jar "$base"/mods/*.jar; do
+        sub="${f%/*}"; sub="${sub##*/}"
+        case "$sub" in mundos) tipo=mundo ;; viejo) tipo=jar ;; plugins) tipo=plugin ;; mods) tipo=mod ;; esac
+        printf 'RESPALDO %s\t%s\t%s\t%s\n' "$tipo" "$(basename "$f")" "$(date -r "$f" '+%Y-%m-%d %H:%M')" "$(du -h "$f" | cut -f1)"
+    done | sort -t$'\t' -k3 -r
+    exit 0
+    ;;
+
+respaldo-guardar)
+    servidor="${2:-}"; servidor_valido "$servidor"
+    archivo=$(guardar_mundo "$servidor" "copia") || exit 1
+    emitir "LISTO Mundo de $NV guardado en Respaldos/$servidor/mundos/$(basename "$archivo")."
+    ;;
+
+restaurar)
+    servidor="${2:-}"; servidor_valido "$servidor"
+    tipo="${3:-}"; archivo="${4:-}"
+    [[ "$archivo" =~ ^[^/]+$ && "$archivo" != .* ]] || error "Respaldo raro." 2
+    apagado "$servidor" || error "$NV está encendido: detenelo antes de restaurar."
+    leer_conf "$servidor"
+    carpeta=$(carpeta_servidor "$servidor")
+    base="$RESPALDOS_MC_DIR/$servidor"
+    case "$tipo" in
+        mundo)
+            origen="$base/mundos/$archivo"
+            [[ "$archivo" == *.tar.zst && -f "$origen" ]] || error "No existe ese respaldo del mundo." 2
+            # Adentro solo puede haber <mundo>/, <mundo>_nether/ y <mundo>_the_end/ (nada de rutas que se salgan)
+            lista=$(tar --zstd -tf "$origen" 2>/dev/null) || error "El respaldo está dañado."
+            raiz=$(head -n1 <<< "$lista" | cut -d/ -f1)
+            [[ "$raiz" =~ ^[A-Za-z0-9._\ -]+$ && "$raiz" != .* ]] || error "El respaldo tiene rutas raras: no se toca nada."
+            if grep -vE "^${raiz//./\\.}(_nether|_the_end)?(/|$)" <<< "$lista" | grep -q . || grep -qE '(^|/)\.\.(/|$)' <<< "$lista"; then
+                error "El respaldo tiene rutas raras: no se toca nada."
+            fi
+            mundo=$(mundo_servidor "$servidor")
+            if [[ -d "$carpeta/$mundo" ]]; then
+                guardado=$(guardar_mundo "$servidor" "antes-de-restaurar") || exit 1
+                emitir "AVISO El mundo que había quedó en Respaldos/$servidor/mundos/$(basename "$guardado")."
+            fi
+            for m in "$mundo" "${mundo}_nether" "${mundo}_the_end" "$raiz" "${raiz}_nether" "${raiz}_the_end"; do rm -rf -- "${carpeta:?}/$m"; done
+            emitir "ETAPA Restaurando el mundo (puede tardar)"
+            tar --zstd -xf "$origen" -C "$carpeta" --no-same-owner --no-same-permissions || error "No se pudo descomprimir el respaldo."
+            if [[ "$raiz" != "$mundo" ]]; then
+                python3 -I "$API" propiedades-cambiar "$carpeta/server.properties" "$CONF_VERSION" "level-name=$raiz" &>/dev/null || true
+            fi
+            emitir "LISTO Mundo de $NV restaurado desde $archivo." ;;
+        jar)
+            origen="$base/viejo/$archivo"
+            [[ "$archivo" == *.jar && -f "$origen" ]] || error "No existe ese jar." 2
+            [[ "$CONF_TIPO" != forge ]] || error "Forge arranca con su run.sh: para cambiarlo, usá «Cambiar versión»."
+            minuscula="${archivo,,}"
+            case "$CONF_TIPO" in
+                paper)   [[ "$minuscula" == paper* ]] ;;
+                fabric)  [[ "$minuscula" == fabric-server* ]] ;;
+                vanilla) [[ "$minuscula" == server*.jar || "$minuscula" == minecraft_server* ]] ;;
+            esac || error "$archivo no parece de $(nombre_tipo "$CONF_TIPO"): no se usa."
+            [[ -f "$carpeta/$archivo" ]] && error "Ya hay un $archivo en el servidor."
+            [[ -n "$CONF_JAR" && -f "$carpeta/$CONF_JAR" ]] && a_respaldos "$servidor" viejo "$carpeta/$CONF_JAR"
+            mv -- "$origen" "$carpeta/$archivo" || error "No se pudo restaurar el jar."
+            cambiar_conf "$servidor" JAR "$archivo"
+            emitir "LISTO $NV arranca otra vez con $archivo (el que tenía quedó en Respaldos)." ;;
+        plugin|mod)
+            sub=$( [[ "$tipo" == plugin ]] && echo plugins || echo mods )
+            origen="$base/$sub/$archivo"
+            [[ "$archivo" == *.jar && -f "$origen" ]] || error "No existe ese respaldo." 2
+            [[ "$(carpeta_complementos "$CONF_TIPO")" == "$sub" ]] || error "$NV es $(nombre_tipo "$CONF_TIPO"): no usa $sub."
+            complemento_sirve "$origen" "$CONF_TIPO" || error "$archivo no es $(que_complemento "$CONF_TIPO")."
+            [[ -f "$carpeta/$sub/$archivo" ]] && error "Ya está $archivo en $sub/."
+            mkdir -p "$carpeta/$sub" && mv -- "$origen" "$carpeta/$sub/$archivo" || error "No se pudo restaurar."
+            emitir "LISTO $archivo vuelve a $NV (si quedó otra versión del mismo en $sub/, sacala desde la pestaña o la carpeta)." ;;
+        *) error "Tipo de respaldo desconocido." 2 ;;
+    esac
+    ;;
+
+# Cambia el software o la versión de un servidor (también sirve para actualizar el cargador de Fabric o Forge):
+# guarda el mundo antes, pasa los plugins/mods a la versión nueva (o a Respaldos si no tienen) y, si la carpeta
+# lleva la versión en el nombre («26.1.2 SMP-1»), la mueve a la de la versión nueva («26.3/26.3 SMP-1»).
+# La configuración llega por stdin: TIPO=…, VERSION=…, LOADER=… (opcional)
+cambiar)
+    servidor="${2:-}"; servidor_valido "$servidor"
+    apagado "$servidor" || error "$NV está encendido: detenelo antes de cambiar la versión."
+    declare -A C=()
+    while IFS= read -r linea || [[ -n "$linea" ]]; do
+        [[ "$linea" =~ ^(TIPO|VERSION|LOADER)=([0-9A-Za-z.+-]*)$ ]] && C[${BASH_REMATCH[1]}]="${BASH_REMATCH[2]}"
+    done
+    tipo="${C[TIPO]:-}"; version="${C[VERSION]:-}"; loader="${C[LOADER]:-}"
+    [[ "$tipo" =~ ^(vanilla|paper|fabric|forge)$ ]] || error "El software tiene que ser Vanilla, Paper, Fabric o Forge." 2
+    [[ "$version" =~ ^[0-9]+\.[0-9]+(\.[0-9]+)?$ ]] || error "Versión de Minecraft rara." 2
+    [[ "$tipo" == fabric || "$tipo" == forge || -z "$loader" ]] || error "Solo Fabric y Forge tienen versión de cargador." 2
+    leer_conf "$servidor"
+    carpeta=$(carpeta_servidor "$servidor")
+    mundo=$(mundo_servidor "$servidor")
+    # Un mundo no se puede abrir en una versión más vieja que la suya
+    if [[ -f "$carpeta/$mundo/level.dat" ]]; then
+        version_mundo=$(python3 -I "$API" mundo-version "$carpeta/$mundo/level.dat" 2>/dev/null | sed -n 's/^MUNDO //p')
+        if [[ "$version_mundo" =~ ^[0-9]+\.[0-9]+(\.[0-9]+)?$ && "$version_mundo" != "$version" \
+              && "$(printf '%s\n%s\n' "$version_mundo" "$version" | sort -V | tail -n1)" == "$version_mundo" ]]; then
+            error "El mundo es de Minecraft $version_mundo: no se puede abrir en $version (más vieja) sin romperlo."
+        fi
+    fi
+    exec 3>&1
+    preparar_version "$version"
+    # Mundo a salvo antes de tocar nada
+    if [[ -d "$carpeta/$mundo" ]]; then
+        guardado=$(guardar_mundo "$servidor" "antes-de-$tipo-$version") || exit 1
+        emitir "AVISO El mundo quedó guardado en Respaldos/$servidor/mundos/$(basename "$guardado")."
+    fi
+    fecha=$(date +%Y%m%d-%H%M%S)
+    # Lo del software anterior va a Respaldos/<servidor>/viejo/
+    if [[ -n "$CONF_JAR" && -f "$carpeta/$CONF_JAR" && "$CONF_JAR" != server.jar ]]; then a_respaldos "$servidor" viejo "$carpeta/$CONF_JAR"; fi
+    rm -f "$carpeta/server.jar"     # el oficial se vuelve a bajar (comprobado) si hace falta
+    if [[ "$CONF_TIPO" == forge ]]; then
+        mkdir -p "$RESPALDOS_MC_DIR/$servidor/viejo/forge-$fecha"
+        for f in "$carpeta"/run.sh "$carpeta"/run.bat "$carpeta"/forge-*.jar; do
+            [[ -f "$f" ]] && mv -- "$f" "$RESPALDOS_MC_DIR/$servidor/viejo/forge-$fecha/"
+        done
+        [[ "$tipo" == forge && -f "$carpeta/user_jvm_args.txt" ]] || { [[ -f "$carpeta/user_jvm_args.txt" ]] && mv -- "$carpeta/user_jvm_args.txt" "$RESPALDOS_MC_DIR/$servidor/viejo/forge-$fecha/"; }
+    fi
+    [[ "$CONF_TIPO" == fabric && "$tipo" != fabric ]] && rm -rf "$carpeta/.fabric"
+    # Paper guarda el nether y el end aparte: los demás los quieren adentro del mundo (al revés, Paper los mueve solo)
+    if [[ "$CONF_TIPO" == paper && "$tipo" != paper ]]; then
+        mundo_desde_paper "$carpeta/$mundo"
+        for par in "_nether:DIM-1" "_the_end:DIM1"; do
+            aparte="$carpeta/$mundo${par%%:*}/${par#*:}"
+            [[ -d "$aparte" && ! -e "$carpeta/$mundo/${par#*:}" ]] && mv -- "$aparte" "$carpeta/$mundo/${par#*:}"
+            rm -rf -- "${carpeta:?}/$mundo${par%%:*}"
+        done
+    fi
+    instalar_software "$tipo" "$version" "$loader" "$CONF_RAM" "$carpeta"
+    # Plugins y mods: a la versión del mismo proyecto que sirve para el software y la versión nuevos
+    viejo_sub=$(carpeta_complementos "$CONF_TIPO"); nuevo_sub=$(carpeta_complementos "$tipo")
+    shopt -s nullglob
+    jars=(); [[ -n "$viejo_sub" ]] && jars=("$carpeta/$viejo_sub"/*.jar)
+    if (( ${#jars[@]} )); then
+        if [[ -z "$nuevo_sub" ]]; then
+            for j in "${jars[@]}"; do a_respaldos "$servidor" "$viejo_sub" "$j"; done
+            emitir "AVISO $(nombre_tipo "$tipo") no usa plugins ni mods: los ${#jars[@]} que había quedaron en Respaldos/$servidor/$viejo_sub."
+        else
+            emitir "ETAPA Buscando en Modrinth las versiones para $(nombre_tipo "$tipo") $version"
+            mkdir -p "$carpeta/$nuevo_sub"
+            pasados=0; guardados=0
+            while IFS=$'\t' read -r archivo nombre actual nueva estado url suma nuevo_archivo; do
+                archivo="${archivo#PLUGIN }"; viejo="$carpeta/$viejo_sub/$archivo"
+                if [[ "$estado" == NUEVA ]] && url_valida "$url" && [[ "$nuevo_archivo" =~ ^[^/]+\.jar$ ]]; then
+                    [[ "$suma" == sha256:* ]] || suma="sha512:$suma"
+                    emitir "ETAPA Bajando $nombre $nueva"
+                    if descargar_jar "$url" "$suma" "$carpeta/$nuevo_sub/.nuevo-$nuevo_archivo"; then
+                        a_respaldos "$servidor" "$viejo_sub" "$viejo"
+                        mv -f "$carpeta/$nuevo_sub/.nuevo-$nuevo_archivo" "$carpeta/$nuevo_sub/$nuevo_archivo"
+                        pasados=$((pasados + 1)); continue
+                    fi
+                    rm -f "$carpeta/$nuevo_sub/.nuevo-$nuevo_archivo"
+                fi
+                if [[ "$estado" == AL_DIA ]] || [[ "$estado" == DESCONOCIDO && "$viejo_sub" == "$nuevo_sub" && "$CONF_TIPO" == "$tipo" ]]; then
+                    [[ "$viejo_sub" == "$nuevo_sub" ]] || mv -- "$viejo" "$carpeta/$nuevo_sub/"
+                    [[ "$estado" == DESCONOCIDO ]] && emitir "AVISO $archivo no está en Modrinth: lo dejo, pero fijate si sirve para $version."
+                    continue
+                fi
+                a_respaldos "$servidor" "$viejo_sub" "$viejo"; guardados=$((guardados + 1))
+                emitir "AVISO $nombre no tiene versión para $(nombre_tipo "$tipo") $version: quedó en Respaldos/$servidor/$viejo_sub."
+            done < <(python3 -I "$API" plugins "$version" "--tipo=$tipo" "${jars[@]}" 2>/dev/null | grep '^PLUGIN ')
+            # Dependencias que ahora falten (p. ej. Fabric API, al pasar de Paper a Fabric)
+            while IFS=$'\t' read -r slug titulo ver url sha512 archivo motivo; do
+                url_valida "$url" && [[ "$archivo" =~ ^[^/]+\.jar$ ]] || continue
+                [[ -f "$carpeta/$nuevo_sub/$archivo" ]] && continue
+                descargar_jar "$url" "sha512:$sha512" "$carpeta/$nuevo_sub/$archivo" && emitir "AVISO También va $titulo (la necesitan los demás)."
+            done < <(python3 -I "$API" dependencias "$tipo" "$version" "$carpeta/$nuevo_sub"/*.jar 2>/dev/null | sed -n 's/^COMPLEMENTO //p')
+            [[ "$viejo_sub" == "$nuevo_sub" ]] || rmdir "$carpeta/$viejo_sub" 2>/dev/null
+            emitir "AVISO $pasados $( [[ $nuevo_sub == mods ]] && echo "mod(s)" || echo "plugin(s)") pasados a $version$( (( guardados )) && echo ", $guardados guardados en Respaldos")."
+        fi
+    fi
+    cambiar_conf "$servidor" TIPO "$tipo"; cambiar_conf "$servidor" VERSION "$version"
+    cambiar_conf "$servidor" JAR "$jar"; cambiar_conf "$servidor" JAVA "$java_n"; cambiar_conf "$servidor" LOADER "$loader"
+    # La carpeta lleva la versión en el nombre: se mueve a la de la versión nueva (con sus respaldos)
+    nuevo="$servidor"; nombre_carpeta="${servidor##*/}"
+    if [[ "$servidor" == */*/* && "$nombre_carpeta" == "$CONF_VERSION "* && "$CONF_VERSION" != "$version" ]]; then
+        candidato="${servidor%%/*}/$(cut -d. -f1,2 <<< "$version")/$version ${nombre_carpeta#"$CONF_VERSION "}"
+        if [[ -e "$SERVIDORES_DIR/$candidato" ]]; then
+            emitir "AVISO Ya existe Servidores/$candidato: la carpeta queda donde estaba."
+        else
+            mkdir -p "$(dirname "$SERVIDORES_DIR/$candidato")" && mv -T -- "$carpeta" "$SERVIDORES_DIR/$candidato" && nuevo="$candidato"
+            if [[ "$nuevo" != "$servidor" && -d "$RESPALDOS_MC_DIR/$servidor" && ! -e "$RESPALDOS_MC_DIR/$nuevo" ]]; then
+                mkdir -p "$(dirname "$RESPALDOS_MC_DIR/$nuevo")" && mv -T -- "$RESPALDOS_MC_DIR/$servidor" "$RESPALDOS_MC_DIR/$nuevo"
+            fi
+            rmdir "$(dirname "$SERVIDORES_DIR/$servidor")" "$(dirname "$RESPALDOS_MC_DIR/$servidor")" 2>/dev/null
+            cambiar_conf "$nuevo" NOMBRE "${nuevo##*/}"
+        fi
+    fi
+    emitir "CREADO $nuevo"
+    emitir "LISTO $(nombre_visible "$nuevo"): ahora es $(nombre_tipo "$tipo") $version${loader:+ (cargador $loader)}, con Java $java_n."
+    ;;
+
+pack-jugadores)
+    servidor="${2:-}"; servidor_valido "$servidor"
+    destino="${3:-}"
+    [[ "$destino" == /*.mrpack && -d "$(dirname "$destino")" && -w "$(dirname "$destino")" ]] || error "Elegí dónde guardar el pack (.mrpack)." 2
+    leer_conf "$servidor"
+    admite "$CONF_TIPO" mods || error "$NV es $(nombre_tipo "$CONF_TIPO"): los jugadores no necesitan mods para entrar."
+    carpeta=$(carpeta_servidor "$servidor")
+    loader="$CONF_LOADER"
+    if [[ -z "$loader" && "$CONF_TIPO" == fabric ]]; then
+        loader=$(sed -n 's/^fabric-server-mc\.[^-]*-loader\.\(.*\)-launcher\..*\.jar$/\1/p' <<< "$CONF_JAR")
+    elif [[ -z "$loader" ]]; then
+        loader=$(grep -o "net/minecraftforge/forge/$CONF_VERSION-[^/]*" "$carpeta/run.sh" 2>/dev/null | head -n1 | sed "s|.*/$CONF_VERSION-||")
+    fi
+    [[ "$loader" =~ ^[0-9A-Za-z.+-]{1,40}$ ]] || error "No sé qué versión de $(nombre_tipo "$CONF_TIPO") tiene $NV (anotala como LOADER= en servidor.conf)."
+    emitir "ETAPA Armando el pack (consultando Modrinth)"
+    salida=$(python3 -I "$API" pack-jugadores "$carpeta" "$CONF_TIPO" "$CONF_VERSION" "$loader" "$NV" "$destino" 2>&1) \
+        || error "$(sed -n 's/^ERROR //p' <<< "$salida" | head -n1)"
+    grep '^AVISO ' <<< "$salida"
+    IFS=$'\t' read -r con_descarga adentro solo_servidor <<< "$(sed -n 's/^PACK //p' <<< "$salida")"
+    (( ${adentro:-0} )) && emitir "AVISO $adentro mod(s) no están en Modrinth: van adentro del pack."
+    (( ${solo_servidor:-0} )) && emitir "AVISO $solo_servidor mod(s) son solo del servidor: no van en el pack."
+    emitir "LISTO Pack para jugadores de $NV: $destino ($((con_descarga + adentro)) mods). Se abre con Prism Launcher o la app de Modrinth."
+    ;;
+
+extra)
+    servidor="${2:-}"; servidor_valido "$servidor"
+    que="${3:-}"
+    leer_conf "$servidor"
+    carpeta=$(carpeta_servidor "$servidor")
+    sub=$(carpeta_complementos "$CONF_TIPO")
+    [[ -n "$sub" ]] || error "$NV es Vanilla: los extras son plugins o mods (pasalo a Paper o Fabric con «Cambiar versión»)."
+    case "$que" in
+        geyser)
+            [[ "$CONF_TIPO" != forge ]] || error "Geyser no tiene versión para Forge (sí para Paper y Fabric)."
+            textos=(geyser); [[ "$CONF_TIPO" == fabric ]] && textos+=(floodgate) ;;
+        bluemap) textos=(bluemap) ;;
+        *) error "Extra desconocido (geyser o bluemap)." 2 ;;
+    esac
+    emitir "ETAPA Buscando $que en Modrinth para $(nombre_tipo "$CONF_TIPO") $CONF_VERSION"
+    salida=$(python3 -I "$API" complementos "$CONF_TIPO" "$CONF_VERSION" "${textos[@]}" 2>/dev/null)
+    # Floodgate para Paper no está en Modrinth: lo publica GeyserMC
+    [[ "$que" == geyser && "$CONF_TIPO" == paper ]] && salida+=$'\n'$(python3 -I "$API" floodgate-paper 2>/dev/null)
+    if grep -q '^NO_SIRVE ' <<< "$salida"; then
+        error "No hay versión para $(nombre_tipo "$CONF_TIPO") $CONF_VERSION: $(sed -n 's/^NO_SIRVE //p' <<< "$salida" | cut -f1 | paste -sd, | sed 's/,/, /g')."
+    fi
+    while IFS=$'\t' read -r slug titulo ver url suma archivo motivo; do
+        url_valida "$url" && [[ "$archivo" =~ ^[^/]+\.jar$ ]] || error "Respuesta rara de Modrinth/GeyserMC."
+        [[ "$suma" == sha256:* ]] || suma="sha512:$suma"
+        [[ -f "$carpeta/$sub/$archivo" ]] && continue
+        emitir "ETAPA Bajando $titulo $ver"
+        descargar_jar "$url" "$suma" "$carpeta/$sub/$archivo" || error "No se pudo bajar $titulo (o la suma no coincide)."
+        emitir "AVISO $titulo $ver instalado."
+    done < <(sed -n 's/^COMPLEMENTO //p' <<< "$salida")
+    if [[ "$que" == geyser ]]; then
+        emitir "LISTO Geyser y Floodgate en $NV: los de Bedrock (celular, consola) entran por el puerto 19132 UDP con su cuenta de Xbox, sin tener Java."
+    else
+        touch "$carpeta/.bluemap-aceptado"
+        emitir "LISTO BlueMap en $NV: al iniciarlo arma el mapa (la primera vez tarda). Se ve en http://$(cat /etc/hostname 2>/dev/null || echo localhost):8100"
+    fi
+    ;;
+
+# Apagado automático (desde la 4.15.0): lo arranca «arrancar» en segundo plano, uno por servidor. Cada minuto
+# pregunta quién está conectado; si pasan APAGAR_VACIO minutos sin nadie, lo detiene, y con APAGAR_PC=si
+# le pide al servidor de la casa que apague la PC (apagar-pc.sh decide: solo si la prendió el WOL en este
+# arranque y nadie la está usando). Registro: ~/.local/state/Arch-Linux-Manager/minecraft-automatico.log
+vigilar)
+    servidor="${2:-}"; servidor_valido "$servidor"
+    estado_dir=$(dir_estado)
+    ses=$(sesion "$servidor"); marca="$estado_dir/vacio-$ses"
+    registro_auto="${XDG_STATE_HOME:-$HOME/.local/state}/Arch-Linux-Manager/minecraft-automatico.log"
+    mkdir -p "$(dirname "$registro_auto")"
+    anotar_auto() { printf '%s %s %s\n' "$(date '+%F %T')" "$NV" "$*" >> "$registro_auto"; }
+    # Uno solo por servidor: el último que arrancó reemplaza al anterior (que se va en su próxima vuelta)
+    pidf="$estado_dir/vigilar-$ses.pid"
+    exec 9> "$estado_dir/vigilar-$ses.lock"
+    flock 9
+    viejo=$(cat "$pidf" 2>/dev/null)
+    [[ "$viejo" =~ ^[0-9]+$ && "$viejo" != "$$" ]] && kill "$viejo" 2>/dev/null
+    echo "$$" > "$pidf"
+    flock -u 9
+    sigo() { [[ "$(cat "$pidf" 2>/dev/null)" == "$$" && -f "$(carpeta_servidor "$servidor")/servidor.conf" ]]; }
+    intervalo="${MINECRAFT_VIGILAR_INTERVALO:-60}"
+    # Espera a que java arranque (hasta 5 minutos)
+    for (( i = 0; i < 300 / intervalo + 1; i++ )); do apagado "$servidor" || break; sigo || exit 0; sleep "$intervalo"; done
+    vacio=0
+    while ! apagado "$servidor"; do
+        sleep "$intervalo"
+        sigo || exit 0
+        apagado "$servidor" && break
+        leer_conf "$servidor"
+        # BlueMap escribe su core.conf en el primer arranque: si se aceptó al instalarlo, se acepta y se recarga
+        if [[ -f "$(carpeta_servidor "$servidor")/.bluemap-aceptado" ]]; then
+            for f in "$(carpeta_servidor "$servidor")"/{plugins/BlueMap,config/bluemap}/core.conf; do
+                if [[ -f "$f" ]] && grep -q '^accept-download: *false' "$f"; then
+                    sed -i 's/^accept-download: *false/accept-download: true/' "$f"
+                    compartida "$servidor" && enviar "$servidor" "bluemap reload"
+                fi
+            done
+        fi
+        (( CONF_APAGAR_VACIO > 0 )) || { vacio=0; rm -f "$marca"; continue; }
+        if [[ -n "${MINECRAFT_JUGADORES_FALSO:-}" ]]; then
+            n=$(cat "$MINECRAFT_JUGADORES_FALSO" 2>/dev/null)
+        else
+            puerto=$(sed -n 's/^server-port=//p' "$(carpeta_servidor "$servidor")/server.properties" 2>/dev/null | head -n1 | tr -d '\r ')
+            [[ "$puerto" =~ ^[0-9]{1,5}$ ]] || puerto=25565
+            n=$(python3 -I "$API" ping "$puerto" 2>/dev/null | sed -n 's/^JUGADORES \([0-9]*\).*/\1/p')
+        fi
+        [[ "$n" =~ ^[0-9]+$ ]] || continue          # todavía arrancando (o no contesta): no cuenta
+        if (( n > 0 )); then vacio=0; rm -f "$marca"; continue; fi
+        vacio=$((vacio + intervalo))
+        limite=$((CONF_APAGAR_VACIO * ${MINECRAFT_VIGILAR_MINUTO:-60}))
+        echo $(( $(date +%s) + limite - vacio )) > "$marca"
+        (( vacio >= limite )) || continue
+        anotar_auto "sin jugadores hace $CONF_APAGAR_VACIO min: se apaga"
+        detener "$servidor" 0 apaga > /dev/null
+        rm -f "$marca"
+        if [[ "$CONF_APAGAR_PC" == si ]]; then
+            otro=""
+            while IFS= read -r s; do apagado "$s" || otro="$s"; done < <(listar_servidores)
+            if [[ -n "$otro" ]]; then
+                anotar_auto "la PC queda prendida: sigue encendido $(nombre_visible "$otro")"
+            elif [[ -n "${MINECRAFT_APAGAR_PC_FALSO:-}" ]]; then
+                echo "apagar pc" >> "$MINECRAFT_APAGAR_PC_FALSO"
+            else
+                resultado=$(bash "$AQUI/Acciones-servidor.sh" pc-apagar 2>&1 | tail -n 3 | tr '\n' ' ')
+                anotar_auto "pedido de apagar la PC: $resultado"
+            fi
+        fi
+        break
+    done
+    rm -f "$marca"
+    [[ "$(cat "$pidf" 2>/dev/null)" == "$$" ]] && rm -f "$pidf"
+    exit 0
     ;;
 
 carpeta)

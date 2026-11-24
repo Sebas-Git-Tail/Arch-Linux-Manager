@@ -1,9 +1,12 @@
 #include "PaginaMinecraft.h"
 #include "AsistenteMinecraft.h"
+#include "PestanasMinecraft.h"
 #include "Tema.h"
 #include "ui_PaginaMinecraft.h"
 
 #include <QDate>
+#include <QFileDialog>
+#include <QStandardPaths>
 #include <QDir>
 #include <QFontDatabase>
 #include <QHeaderView>
@@ -22,6 +25,7 @@ constexpr int RolNombre = Qt::UserRole;          // «Amigos/26.1/26.1.2 SMP-1»
 constexpr int RolEncendido = Qt::UserRole + 1;
 constexpr int RolRam = Qt::UserRole + 2;
 constexpr int RolTipo = Qt::UserRole + 3;
+constexpr int RolVersion = Qt::UserRole + 4;
 
 // Los servidores se identifican por su ruta dentro de Servidores/ (<grupo>/<versión>/<servidor>): en la
 // lista van dentro de su grupo y en los mensajes se muestran como «26.1.2 SMP-1 (Amigos)».
@@ -68,8 +72,31 @@ PaginaMinecraft::PaginaMinecraft(const QString &logica, QWidget *parent)
     for (int c = 1; c < ui->arbolPlugins->columnCount(); ++c)
         ui->arbolPlugins->header()->setSectionResizeMode(c, QHeaderView::ResizeToContents);
 
+    // Pestañas Jugadores, Opciones y Respaldos (PestanasMinecraft): lo que cambian lo corre el panel
+    pestanaJugadores = new PestanaJugadores(script, this);
+    pestanaOpciones = new PestanaOpciones(script, this);
+    pestanaRespaldos = new PestanaRespaldos(script, this);
+    int posicion = ui->pestanasServidor->indexOf(ui->pestanaPlugins) + 1;
+    ui->pestanasServidor->insertTab(posicion++, pestanaJugadores, tr("Jugadores"));
+    ui->pestanasServidor->insertTab(posicion++, pestanaOpciones, tr("Opciones"));
+    ui->pestanasServidor->insertTab(posicion, pestanaRespaldos, tr("Respaldos"));
+    for (PestanaServidor *p : pestanas())
+        connect(p, &PestanaServidor::accion, this, [this](const QStringList &argumentos, const QString &estado, const QByteArray &entrada) {
+            if (!accion.ocupado())
+                ejecutar(argumentos, estado, entrada);
+        });
+    botonCambiarVersion = new QPushButton(tema::icono(QStringLiteral("actualizar")), tr("Cambiar versión…"));
+    botonCambiarVersion->setToolTip(tr("Otro software o versión (o actualizar el cargador de Fabric/Forge), guardando el mundo antes"));
+    ui->layoutAccionesServidor2->insertWidget(ui->layoutAccionesServidor2->indexOf(ui->botonRam), botonCambiarVersion);
+    connect(botonCambiarVersion, &QPushButton::clicked, this, &PaginaMinecraft::cambiarVersion);
+    botonPack = new QPushButton(tema::icono(QStringLiteral("paquete")), tr("Pack para jugadores…"));
+    botonPack->setToolTip(tr("Un .mrpack con los mods que necesitan los jugadores (se abre con Prism Launcher o la app de Modrinth)"));
+    ui->layoutAccionesPlugins->addWidget(botonPack);
+    connect(botonPack, &QPushButton::clicked, this, &PaginaMinecraft::packJugadores);
+
     connect(ui->arbolServidores, &QTreeWidget::currentItemChanged, this, [this] {
         elegido = servidorElegido();
+        actualizarPestanas();
         actualizarBotones();
         if (elegido != pluginsDe)
             consultarPlugins();
@@ -310,7 +337,11 @@ void PaginaMinecraft::eventoConsulta(const QString &palabra, const QString &rest
         // Cerrados salvo que el usuario lo haya abierto, o que tenga uno encendido o el elegido
         if (grupo && !gruposAbiertos.contains(grupo->text(0)) && (encendido || nombre == elegido))
             grupo->setExpanded(true);
-        item->setText(0, nombre.section(u'/', -1) + (encendido ? tr("  (encendido)") : QString()));
+        // (noveno campo, desde la 4.15.0: en cuántos minutos se apaga solo por no tener jugadores)
+        const QString apaga = c.size() > 8 ? c.at(8) : QString();
+        item->setText(0, nombre.section(u'/', -1)
+                             + (!encendido ? QString() : apaga.isEmpty() ? tr("  (encendido)")
+                                : tr("  (encendido · sin jugadores, se apaga en %1 min)").arg(apaga)));
         item->setIcon(0, tema::icono(QStringLiteral("punto"), encendido ? tema::colores().ok : tema::colores().texto3));
         item->setText(1, nombreTipo(c.at(2)) + u' ' + c.at(3));
         item->setText(2, c.at(4));
@@ -321,6 +352,7 @@ void PaginaMinecraft::eventoConsulta(const QString &palabra, const QString &rest
         item->setData(0, RolEncendido, encendido);
         item->setData(0, RolRam, c.at(6));
         item->setData(0, RolTipo, c.at(2));
+        item->setData(0, RolVersion, c.at(3));
         item->setFlags(item->flags() | Qt::ItemIsUserCheckable);
         item->setCheckState(0, marcados.contains(nombre) ? Qt::Checked : Qt::Unchecked);
         if (grupo) {
@@ -357,6 +389,7 @@ void PaginaMinecraft::terminoConsulta()
         return;
     }
     primeraVez = false;
+    actualizarPestanas();
     actualizarBotones();
 }
 
@@ -470,6 +503,13 @@ void PaginaMinecraft::actualizarBotones()
                                            && pluginsDe == servidorElegido());
     ui->botonPlugin->setEnabled(libre);
     ui->botonCrear->setEnabled(libre);
+    botonCambiarVersion->setEnabled(libre && hay && !encendido);
+    botonCambiarVersion->setToolTip(encendido ? tr("Detenelo antes de cambiar la versión")
+                                              : tr("Otro software o versión (o actualizar el cargador de Fabric/Forge), guardando el mundo antes"));
+    botonPack->setVisible(pluginsSonMods);
+    botonPack->setEnabled(libre && hay);
+    for (PestanaServidor *p : pestanas())
+        p->ponerOcupado(!libre);
     ui->grupoPrism->setEnabled(libre && ui->comboInstancia->count() > 0);
 
     const bool comandos = consola == Consola::Comandos;
@@ -665,6 +705,8 @@ void PaginaMinecraft::terminoAccion(int codigo, bool cancelado)
     cancelable = false;
     creando = false;
     actualizarBotones();
+    for (PestanaServidor *p : pestanas())
+        p->refrescar();
 
     if (recargarPlugins) {
         recargarPlugins = false;
@@ -689,4 +731,51 @@ void PaginaMinecraft::crearServidor()
         return;
     creando = true;
     ejecutar({QStringLiteral("crear")}, tr("Creando %1…").arg(asistente.titulo()), asistente.configuracion());
+}
+
+QList<PestanaServidor *> PaginaMinecraft::pestanas() const
+{
+    return {pestanaJugadores, pestanaOpciones, pestanaRespaldos};
+}
+
+// El servidor elegido, su estado y su tipo, para las pestañas (cada una vuelve a consultar si cambió)
+void PaginaMinecraft::actualizarPestanas()
+{
+    const QTreeWidgetItem *item = ui->arbolServidores->currentItem();
+    const QString servidor = servidorElegido();
+    const bool encendido = item && item->data(0, RolEncendido).toBool();
+    const QString tipo = item ? item->data(0, RolTipo).toString() : QString();
+    for (PestanaServidor *p : pestanas())
+        p->elegir(servidor, encendido, tipo);
+}
+
+void PaginaMinecraft::cambiarVersion()
+{
+    const QTreeWidgetItem *item = ui->arbolServidores->currentItem();
+    const QString servidor = servidorElegido();
+    if (!item || servidor.isEmpty())
+        return;
+    DialogoVersionMinecraft dialogo(script, servidor, item->data(0, RolTipo).toString(), item->data(0, RolVersion).toString(), this);
+    if (dialogo.exec() != QDialog::Accepted)
+        return;
+    recargarPlugins = true;
+    creando = true;    // (se puede cancelar: el mundo ya quedó guardado antes de tocar nada)
+    ejecutar({QStringLiteral("cambiar"), servidor}, tr("Pasando %1 a %2…").arg(etiqueta(servidor), dialogo.descripcion()),
+             dialogo.configuracion());
+}
+
+void PaginaMinecraft::packJugadores()
+{
+    const QString servidor = servidorElegido();
+    if (servidor.isEmpty())
+        return;
+    const QString carpeta = QStandardPaths::writableLocation(QStandardPaths::DownloadLocation);
+    const QString sugerido = QDir(carpeta.isEmpty() ? QDir::homePath() : carpeta)
+                                 .filePath(servidor.section(u'/', -1) + QStringLiteral(" - para jugadores.mrpack"));
+    QString destino = QFileDialog::getSaveFileName(this, tr("Guardar el pack para jugadores"), sugerido, tr("Modpack de Modrinth (*.mrpack)"));
+    if (destino.isEmpty())
+        return;
+    if (!destino.endsWith(QStringLiteral(".mrpack")))
+        destino += QStringLiteral(".mrpack");
+    ejecutar({QStringLiteral("pack-jugadores"), servidor, destino}, tr("Armando el pack para jugadores de %1…").arg(etiqueta(servidor)));
 }

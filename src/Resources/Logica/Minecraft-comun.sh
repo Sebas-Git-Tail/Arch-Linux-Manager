@@ -13,6 +13,8 @@
 # servidor.conf (lo único que hay que tocar a mano, si hace falta):
 #   NOMBRE="26.3 SMP-1"   TIPO=paper|vanilla|fabric|forge   VERSION=26.3   JAR="paper-26.3-244.jar"   RAM=8G
 #   JAVA=25 (opcional: qué Java usar, de /usr/lib/jvm; si no está, el de siempre)   LOADER="0.20.1" (informativo)
+#   APAGAR_VACIO=10 (minutos sin jugadores hasta apagarlo solo; 0 = nunca)   APAGAR_PC=si|no (después, si la
+#   PC se prendió por WOL y nadie la usa, pedir que se apague; ver «vigilar» en Minecraft.sh)
 # (NOMBRE es solo informativo: manda la carpeta.) Forge arranca con su run.sh (la RAM va en user_jvm_args.txt);
 # los demás con «java -jar JAR». Los servidores nuevos los arma «Minecraft.sh crear» (desde la 4.14.0).
 #
@@ -56,7 +58,7 @@ carpeta_servidor() {
 leer_conf() {
     local conf linea clave valor
     conf="$(carpeta_servidor "$1")/servidor.conf"
-    CONF_TIPO=paper; CONF_VERSION=""; CONF_JAR=""; CONF_RAM=8G; CONF_JAVA=""; CONF_LOADER=""
+    CONF_TIPO=paper; CONF_VERSION=""; CONF_JAR=""; CONF_RAM=8G; CONF_JAVA=""; CONF_LOADER=""; CONF_APAGAR_VACIO=10; CONF_APAGAR_PC=si
     [[ -f "$conf" ]] || return 1
     while IFS= read -r linea || [[ -n "$linea" ]]; do
         [[ "$linea" =~ ^([A-Z]+)=(.*)$ ]] || continue
@@ -69,6 +71,8 @@ leer_conf() {
             RAM)     [[ "$valor" =~ ^[0-9]+[GM]$ ]] && CONF_RAM="$valor" ;;
             JAVA)    [[ "$valor" =~ ^[0-9]{1,2}$ ]] && CONF_JAVA="$valor" ;;
             LOADER)  [[ "$valor" =~ ^[0-9A-Za-z.+\-]{1,40}$ ]] && CONF_LOADER="$valor" ;;
+            APAGAR_VACIO) [[ "$valor" =~ ^[0-9]{1,3}$ ]] && CONF_APAGAR_VACIO=$((10#$valor)) ;;
+            APAGAR_PC)    [[ "$valor" =~ ^(si|no)$ ]] && CONF_APAGAR_PC="$valor" ;;
         esac
     done < "$conf"
     return 0

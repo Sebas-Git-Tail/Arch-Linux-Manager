@@ -129,6 +129,7 @@ igual "sin clave ni configuración sale con 2" "$codigo" "2"
 grep -q 'sshpass\|NOTIF_CLAVE\|desofuscar' "$LOGICA/Notificacion.sh" && mal "Notificacion.sh sigue usando contraseña" || ok "Notificacion.sh no usa contraseña"
 
 echo "Minecraft.sh (servidores falsos en $TMP, API falsa: no toca la red)"
+export MINECRAFT_VIGILAR=0    # (el apagado automático tiene su propia prueba, más abajo)
 export MINECRAFT_DIR="$TMP/mc"
 S="$MINECRAFT_DIR/Servidores"
 mkdir -p "$S/26.3 SMP-1/plugins" "$S/26.3 SMP-1/world/region" "$S/26.3 SMP-1/world_nether" "$S/26.2 Forge" "$S/sin conf"
@@ -313,8 +314,8 @@ for slug in ("chunky", "solo-paper", "fabric-api"):
 guardar(f"{m.MODRINTH}/project/id-fabric-api", {"id": "id-fabric-api", "slug": "fabric-api", "title": "Fabric API", "server_side": "optional"})
 proyecto("sodium", lado="unsupported")
 versiones("chunky", "paper", [version("Chunky-Paper.jar", {"plugin.yml": "name: Chunky"})])
-versiones("chunky", "fabric", [version("Chunky-Fabric.jar", {"fabric.mod.json": "{}"}, deps=["id-fabric-api"])])
-versiones("fabric-api", "fabric", [version("fabric-api.jar", {"fabric.mod.json": "{}"})])
+versiones("chunky", "fabric", [version("Chunky-Fabric.jar", {"fabric.mod.json": '{"id": "chunky"}'}, deps=["id-fabric-api"])])
+versiones("fabric-api", "fabric", [version("fabric-api.jar", {"fabric.mod.json": '{"id": "fabric-api"}'})])
 versiones("solo-paper", "paper", [version("SoloPaper.jar", {"plugin.yml": "name: S"})])
 versiones("solo-paper", "fabric", [])
 # Modpacks (.mrpack): uno bueno (Fabric 0.19.0, un mod de servidor, uno de cliente y config) y uno con una ruta peligrosa
@@ -394,6 +395,174 @@ if command -v tmux > /dev/null; then
     igual "iniciar usa el Java elegido al crearlo" "$(cat "$S/Amigos/26.3/26.3 Fab/java-usado.txt" 2>/dev/null)" "java21 -Xms1G -Xmx4G -jar fabric-server-mc.26.3-loader.0.20.1-launcher.1.1.2.jar nogui"
     tmux -L "$MINECRAFT_TMUX" kill-server 2>/dev/null
     unset MINECRAFT_TMUX MINECRAFT_SIN_TERMINAL
+fi
+# Administrar servidores (desde la 4.15.0): jugadores, opciones, respaldos, cambiar versión, pack, extras, apagado automático
+echo "Minecraft.sh: jugadores, opciones, respaldos, cambiar, pack y apagado automático (todo falso)"
+P1="$S/Amigos/26.3/26.3 Nuevo"     # Paper (de las pruebas de crear)
+printf '[{"uuid":"u-steve","name":"Steve","expiresOn":"2026-12-20 10:00:00 -0300"},{"uuid":"u-alex","name":"Alex","expiresOn":"2026-12-01 10:00:00 -0300"}]' > "$P1/usercache.json"
+printf '[{"uuid":"u-alex","name":"Alex","level":4,"bypassesPlayerLimit":false}]' > "$P1/ops.json"
+lista=$(MC jugadores-lista "Amigos/26.3/26.3 Nuevo")
+igual "jugadores: lista con op y última vez" "$(grep '^JUGADOR Alex' <<< "$lista" | cut -f4,5,6,8 | tr '\t' '|')" "4|0|0|2026-11-01"
+grep -q '^LISTA_BLANCA false' <<< "$lista" && ok "jugadores: dice si hay lista blanca" || mal "jugadores: lista blanca" "$lista"
+sed -i 's/^online-mode=.*/online-mode=false/' "$P1/server.properties"
+MC jugador "Amigos/26.3/26.3 Nuevo" whitelist-add Notch > /dev/null
+igual "jugador (apagado): UUID offline como Minecraft" "$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))[0]["uuid"])' "$P1/whitelist.json")" "b50ad385-829d-3141-a216-7e7d7539ba7f"
+MC jugador "Amigos/26.3/26.3 Nuevo" ban Steve "por griefer" > /dev/null
+igual "jugador: ban con motivo" "$(grep '^JUGADOR Steve' <<< "$(MC jugadores-lista "Amigos/26.3/26.3 Nuevo")" | cut -f6,7 | tr '\t' '|')" "1|por griefer"
+MC jugador "Amigos/26.3/26.3 Nuevo" pardon Steve > /dev/null; MC jugador "Amigos/26.3/26.3 Nuevo" deop Alex > /dev/null
+igual "jugador: pardon y deop" "$(cat "$P1/banned-players.json" "$P1/ops.json" | tr -d ' \n')" "[][]"
+MC jugador "Amigos/26.3/26.3 Nuevo" op 'Steve;rm' > /dev/null; igual "jugador: rechaza nombres raros" "$?" "2"
+dice 'nunca entró' "$(MC jugador "Amigos/26.3/26.3 Nuevo" op .Bedrock1)" && ok "jugador: uno de Bedrock que nunca entró pide el servidor prendido" || mal "jugador bedrock"
+MC jugador "Amigos/26.3/26.3 Nuevo" lista-blanca-si > /dev/null
+grep -qx 'white-list=true' "$P1/server.properties" && grep -qx 'enforce-whitelist=true' "$P1/server.properties" && ok "jugador: activar la lista blanca (apagado)" || mal "lista blanca"
+# Opciones
+op=$(MC opciones-servidor "Amigos/26.3/26.3 Nuevo")
+igual "opciones: lee el MOTD (con escapes)" "$(grep '^OPCION motd' <<< "$op" | cut -f6)" "Servidor de Ñandú"
+grep -q $'^AJUSTE APAGAR_VACIO\t10' <<< "$op" && ok "opciones: ajustes del Manager (apagado automático: 10 min)" || mal "opciones: ajustes" "$op"
+printf 'motd=§aHola§r\\nlínea 2\ndifficulty=hard\npvp=false\n' | MC propiedades-cambiar "Amigos/26.3/26.3 Nuevo" > /dev/null
+grep -qx 'motd=\\u00a7aHola\\u00a7r\\nl\\u00ednea 2' "$P1/server.properties" && grep -qx 'difficulty=hard' "$P1/server.properties" && grep -qx 'gamemode=creative' "$P1/server.properties" \
+    && ok "opciones: guarda MOTD con colores y dos líneas, sin tocar lo demás" || mal "opciones: guardar" "$(cat "$P1/server.properties")"
+igual "opciones: lee lo guardado" "$(MC opciones-servidor "Amigos/26.3/26.3 Nuevo" | grep '^OPCION motd' | cut -f6)" '§aHola§r\nlínea 2'
+printf 'motd=Fih 🐔 ñ\n' | MC propiedades-cambiar "Amigos/26.3/26.3 Nuevo" > /dev/null
+grep -qx 'motd=Fih \\ud83d\\udc14 \\u00f1' "$P1/server.properties" && ok "opciones: escribe emojis como Java (par sustituto)" || mal "opciones: emoji" "$(grep motd "$P1/server.properties")"
+igual "opciones: lee el emoji de vuelta" "$(MC opciones-servidor "Amigos/26.3/26.3 Nuevo" | grep '^OPCION motd' | cut -f6)" "Fih 🐔 ñ"
+mkdir -p "$TMP/utf8"; printf 'motd=Fih \xf0\x9f\x90\x94\n' > "$TMP/utf8/server.properties"
+igual "opciones: lee un server.properties en UTF-8" "$(python3 -I "$LOGICA/minecraft_api.py" opciones-servidor "$TMP/utf8" 2>/dev/null | grep '^OPCION motd' | cut -f6)" "Fih 🐔"
+printf 'server-port=1\n' | MC propiedades-cambiar "Amigos/26.3/26.3 Nuevo" > /dev/null; igual "opciones: no deja tocar claves fuera de la lista" "$?" "1"
+printf 'max-players=9999\n' | MC propiedades-cambiar "Amigos/26.3/26.3 Nuevo" > /dev/null; igual "opciones: rechaza valores fuera de rango" "$?" "1"
+igual "ajuste: minutos del apagado automático" "$(MC ajuste "Amigos/26.3/26.3 Nuevo" APAGAR_VACIO 5 >/dev/null; grep '^APAGAR_VACIO' "$P1/servidor.conf")" 'APAGAR_VACIO="5"'
+MC ajuste "Amigos/26.3/26.3 Nuevo" APAGAR_VACIO 99999 > /dev/null; igual "ajuste: rechaza valores raros" "$?" "2"
+printf 'APAGAR_PC=no\npvp=true\n' | MC propiedades-cambiar "Amigos/26.3/26.3 Nuevo" > /dev/null
+grep -qE '^APAGAR_PC="?no' "$P1/servidor.conf" && grep -qx 'pvp=true' "$P1/server.properties" && ok "opciones: guarda ajustes del Manager y del servidor juntos" || mal "opciones + ajustes"
+printf 'APAGAR_PC=quizas\n' | MC propiedades-cambiar "Amigos/26.3/26.3 Nuevo" > /dev/null; igual "opciones: rechaza ajustes raros" "$?" "2"
+printf 'APAGAR_PC=si\n' | MC propiedades-cambiar "Amigos/26.3/26.3 Nuevo" > /dev/null
+python3 -c 'import struct,sys,zlib; open(sys.argv[1],"wb").write(b"\x89PNG\r\n\x1a\n"+struct.pack(">I",13)+b"IHDR"+struct.pack(">II",64,64)+b"\x08\x06\x00\x00\x00")' "$TMP/i64.png"
+python3 -c 'import struct,sys; open(sys.argv[1],"wb").write(b"\x89PNG\r\n\x1a\n"+struct.pack(">I",13)+b"IHDR"+struct.pack(">II",128,128)+b"\x08\x06\x00\x00\x00")' "$TMP/i128.png"
+MC icono "Amigos/26.3/26.3 Nuevo" "$TMP/i64.png" > /dev/null && [[ -f "$P1/server-icon.png" ]] && ok "icono: copia un PNG de 64×64" || mal "icono"
+MC icono "Amigos/26.3/26.3 Nuevo" "$TMP/i128.png" > /dev/null; igual "icono: rechaza otro tamaño" "$?" "2"
+# Respaldos
+MC respaldo-guardar "Amigos/26.3/26.3 Nuevo" > /dev/null
+copia=$(ls "$MINECRAFT_DIR/Respaldos/Amigos/26.3/26.3 Nuevo/mundos/"*.tar.zst 2>/dev/null | head -1)
+[[ -n "$copia" ]] && ok "respaldo-guardar: guarda el mundo" || mal "respaldo-guardar"
+grep -q $'^RESPALDO mundo\t' <<< "$(MC respaldos "Amigos/26.3/26.3 Nuevo")" && ok "respaldos: los lista" || mal "respaldos: lista"
+echo cambiado > "$P1/world/region/r.0.0.mca"
+MC restaurar "Amigos/26.3/26.3 Nuevo" mundo "$(basename "$copia")" > /dev/null
+igual "restaurar: vuelve el mundo guardado" "$(cat "$P1/world/region/r.0.0.mca")" "datos"
+ls "$MINECRAFT_DIR/Respaldos/Amigos/26.3/26.3 Nuevo/mundos/"*antes-de-restaurar*.tar.zst &> /dev/null && ok "restaurar: guarda antes el mundo que había" || mal "restaurar: guarda el anterior"
+mkdir -p "$TMP/malo/x"; echo pwn > "$TMP/malo/x/evil"; tar --zstd -cf "$MINECRAFT_DIR/Respaldos/Amigos/26.3/26.3 Nuevo/mundos/malo.tar.zst" -C "$TMP/malo" --transform 's|^x|world/../../escapado|' x
+MC restaurar "Amigos/26.3/26.3 Nuevo" mundo malo.tar.zst > /dev/null
+[[ $? -ne 0 && -f "$P1/world/level.dat" && ! -e "$S/Amigos/escapado" ]] && ok "restaurar: rechaza un respaldo con rutas que se salen (y no toca el mundo)" || mal "restaurar malicioso"
+MC restaurar "Amigos/26.3/26.3 Nuevo" mundo "../../x.tar.zst" > /dev/null; igual "restaurar: rechaza rutas" "$?" "2"
+# Cambiar: Paper 26.3 → Fabric 26.3 (Chunky pasa a su versión Fabric y se suma Fabric API) y una versión más vieja que el mundo
+cp -r "$FALSA" "$TMP/api-cambiar"; export MINECRAFT_API_FALSA="$TMP/api-cambiar"
+PYTHONDONTWRITEBYTECODE=1 python3 - "$TMP/api-cambiar" "$TMP" "$LOGICA" "$P1" <<'PY'
+import hashlib, json, os, re, sys
+falsa, tmp, logica, p1 = sys.argv[1:5]
+sys.path.insert(0, logica)
+import minecraft_api as m
+def guardar(url, datos):
+    json.dump(datos, open(os.path.join(falsa, re.sub(r"[^A-Za-z0-9]+", "_", url.split("://", 1)[-1])[:150] + ".json"), "w"))
+d = os.path.join(tmp, "descargas")
+def ver(archivo, proyecto, deps=()):
+    datos = open(os.path.join(d, archivo), "rb").read()
+    return {"id": "v-" + archivo, "project_id": proyecto, "version_number": "1.0",
+            "files": [{"primary": True, "url": "file://" + os.path.join(d, archivo), "filename": archivo,
+                       "hashes": {"sha1": hashlib.sha1(datos).hexdigest(), "sha512": hashlib.sha512(datos).hexdigest()}}],
+            "dependencies": [{"project_id": x, "dependency_type": "required"} for x in deps]}
+s1 = lambda a: hashlib.sha1(open(os.path.join(d, a), "rb").read()).hexdigest()
+guardar(f"{m.MODRINTH}/version_files", {s1("Chunky-Paper.jar"): ver("Chunky-Paper.jar", "id-chunky"),
+                                        s1("Chunky-Fabric.jar"): ver("Chunky-Fabric.jar", "id-chunky", ["id-fabric-api"])})
+guardar(f"{m.MODRINTH}/version_files/update", {s1("Chunky-Paper.jar"): ver("Chunky-Fabric.jar", "id-chunky")})
+guardar(f"{m.MODRINTH}/projects?ids=" + m.q(json.dumps(["id-chunky"])), [{"id": "id-chunky", "title": "Chunky", "client_side": "unsupported"}])
+PY
+mkdir -p "$P1/world_nether/DIM-1/region"; echo nether > "$P1/world_nether/DIM-1/region/r.0.0.mca"
+mkdir -p "$P1/world/dimensions/minecraft/overworld/data/minecraft"; echo ajustes > "$P1/world/dimensions/minecraft/overworld/data/minecraft/world_gen_settings.dat"
+salida=$(printf 'TIPO=fabric\nVERSION=26.3\n' | MC cambiar "Amigos/26.3/26.3 Nuevo")
+grep -q '^CREADO Amigos/26.3/26.3 Nuevo$' <<< "$salida" && grep -qE '^TIPO="?fabric' "$P1/servidor.conf" && ok "cambiar: Paper → Fabric" || mal "cambiar Paper → Fabric" "$(tail -3 <<< "$salida")"
+[[ -f "$P1/mods/Chunky-Fabric.jar" && -f "$P1/mods/fabric-api.jar" && ! -d "$P1/plugins" ]] && ok "cambiar: el plugin pasa a su mod (y se suma la dependencia)" || mal "cambiar: complementos" "$(ls "$P1"/mods "$P1"/plugins 2>&1 | tr '\n' ' ')"
+[[ -f "$P1/world/DIM-1/region/r.0.0.mca" && ! -e "$P1/world_nether" ]] && ok "cambiar: el nether de Paper vuelve adentro del mundo" || mal "cambiar: nether"
+igual "cambiar: world_gen_settings.dat de Paper donde lo busca el juego" "$(cat "$P1/world/data/minecraft/world_gen_settings.dat" 2>/dev/null)" "ajustes"
+ls "$MINECRAFT_DIR/Respaldos/Amigos/26.3/26.3 Nuevo/viejo/paper-26.3-300.jar" &> /dev/null && ok "cambiar: el jar de Paper queda en Respaldos" || mal "cambiar: jar viejo"
+dice 'no se puede abrir en 26.1.2' "$(printf 'TIPO=fabric\nVERSION=26.1.2\n' | MC cambiar "Amigos/26.3/26.3 Nuevo")" && ok "cambiar: no baja la versión por debajo de la del mundo" || mal "cambiar: versión del mundo"
+mkdir -p "$S/Amigos/26.1/26.1.2 Mover"; printf 'NOMBRE="26.1.2 Mover"\nTIPO=vanilla\nVERSION=26.1.2\nJAR="server.jar"\nRAM=2G\n' > "$S/Amigos/26.1/26.1.2 Mover/servidor.conf"
+salida=$(printf 'TIPO=paper\nVERSION=26.3\n' | MC cambiar "Amigos/26.1/26.1.2 Mover")
+[[ -f "$S/Amigos/26.3/26.3 Mover/servidor.conf" && ! -e "$S/Amigos/26.1/26.1.2 Mover" ]] && grep -q '^CREADO Amigos/26.3/26.3 Mover$' <<< "$salida" \
+    && ok "cambiar: la carpeta pasa a la de la versión nueva" || mal "cambiar: mover carpeta" "$(tail -2 <<< "$salida")"
+# Pack para jugadores
+cp -r "$FALSA" "$TMP/api-pack"; export MINECRAFT_API_FALSA="$TMP/api-pack"
+F="$S/Amigos/26.3/26.3 Fab"; (cd "$TMP/j" && echo '{}' > fabric.mod.json && python3 -c "import zipfile; z=zipfile.ZipFile('raro.jar','w'); z.write('fabric.mod.json'); z.close()"); cp "$TMP/j/raro.jar" "$F/mods/"
+PYTHONDONTWRITEBYTECODE=1 python3 - "$TMP/api-pack" "$TMP" "$LOGICA" <<'PY'
+import hashlib, json, os, re, sys
+falsa, tmp, logica = sys.argv[1:4]
+sys.path.insert(0, logica)
+import minecraft_api as m
+def guardar(url, datos):
+    json.dump(datos, open(os.path.join(falsa, re.sub(r"[^A-Za-z0-9]+", "_", url.split("://", 1)[-1])[:150] + ".json"), "w"))
+d = os.path.join(tmp, "descargas")
+def ver(archivo, proyecto):
+    datos = open(os.path.join(d, archivo), "rb").read()
+    return {"id": "v-" + archivo, "project_id": proyecto, "version_number": "1.0",
+            "files": [{"primary": True, "url": "https://cdn.modrinth.com/" + archivo, "filename": archivo,
+                       "hashes": {"sha1": hashlib.sha1(datos).hexdigest(), "sha512": hashlib.sha512(datos).hexdigest()}}]}
+s1 = lambda a: hashlib.sha1(open(os.path.join(d, a), "rb").read()).hexdigest()
+guardar(f"{m.MODRINTH}/version_files", {s1("Chunky-Fabric.jar"): ver("Chunky-Fabric.jar", "id-chunky"), s1("fabric-api.jar"): ver("fabric-api.jar", "id-fabric-api")})
+guardar(f"{m.MODRINTH}/projects?ids=" + m.q(json.dumps(["id-chunky", "id-fabric-api"])),
+        [{"id": "id-chunky", "client_side": "unsupported"}, {"id": "id-fabric-api", "client_side": "required"}])
+PY
+salida=$(MC pack-jugadores "Amigos/26.3/26.3 Fab" "$TMP/jugadores.mrpack")
+indice=$(python3 -c 'import json,sys,zipfile; z=zipfile.ZipFile(sys.argv[1]); i=json.loads(z.read("modrinth.index.json")); print(" ".join(sorted(f["path"] for f in i["files"])), i["dependencies"]["fabric-loader"], " ".join(n for n in z.namelist() if n.startswith("overrides")))' "$TMP/jugadores.mrpack" 2>&1)
+igual "pack: lo del cliente con descarga, lo de servidor afuera, lo desconocido adentro" "$indice" "mods/fabric-api.jar 0.20.1 overrides/mods/raro.jar"
+MC pack-jugadores "Amigos/26.3/26.3 Pack" "$TMP/pack2.mrpack" > /dev/null
+igual "pack: si salió de un modpack, también lleva lo que es solo del cliente" "$(python3 -c 'import json,sys,zipfile; print(len(json.loads(zipfile.ZipFile(sys.argv[1]).read("modrinth.index.json"))["files"]))' "$TMP/pack2.mrpack")" "2"
+dice 'no necesitan mods' "$(MC pack-jugadores "Amigos/26.3/26.3 Copia" "$TMP/x.mrpack")" && ok "pack: Vanilla no tiene pack" || mal "pack Vanilla"
+# Extras: Geyser en Forge no; BlueMap en Fabric sí (con la marca para aceptar la descarga al iniciar)
+PYTHONDONTWRITEBYTECODE=1 python3 - "$TMP/api-pack" "$TMP" "$LOGICA" <<'PY'
+import hashlib, json, os, re, sys, zipfile
+falsa, tmp, logica = sys.argv[1:4]
+sys.path.insert(0, logica)
+import minecraft_api as m
+def guardar(url, datos):
+    json.dump(datos, open(os.path.join(falsa, re.sub(r"[^A-Za-z0-9]+", "_", url.split("://", 1)[-1])[:150] + ".json"), "w"))
+r = os.path.join(tmp, "descargas", "BlueMap-Fabric.jar")
+with zipfile.ZipFile(r, "w") as z: z.writestr("fabric.mod.json", "{}")
+datos = open(r, "rb").read()
+guardar(f"{m.MODRINTH}/project/bluemap", {"id": "id-bluemap", "slug": "bluemap", "title": "BlueMap", "server_side": "required"})
+guardar(f"{m.MODRINTH}/project/bluemap/version?loaders=" + m.q(json.dumps(["fabric"])) + "&game_versions=" + m.q(json.dumps(["26.3"])),
+        [{"id": "vb", "version_number": "5.0", "files": [{"primary": True, "url": "file://" + r, "filename": "BlueMap-Fabric.jar", "hashes": {"sha512": hashlib.sha512(datos).hexdigest()}}]}])
+PY
+MC extra "Amigos/26.3/26.3 Fab" bluemap > /dev/null
+[[ -f "$F/mods/BlueMap-Fabric.jar" && -f "$F/.bluemap-aceptado" ]] && ok "extra: BlueMap (y la marca para aceptar su descarga)" || mal "extra bluemap"
+mkdir -p "$F/config/bluemap"; echo 'accept-download: false' > "$F/config/bluemap/core.conf"
+dice 'Vanilla' "$(MC extra "Amigos/26.3/26.3 Copia" geyser)" && ok "extra: Vanilla no lleva extras" || mal "extra vanilla"
+export MINECRAFT_API_FALSA="$FALSA"
+# Apagado automático: java falso que no se apaga solo, jugadores falsos, 1 «minuto» = 1 segundo
+if command -v tmux > /dev/null; then
+    printf '#!/bin/bash\nmkdir -p logs; echo "[INFO]: Done" > logs/latest.log\nwhile IFS= read -r l; do echo "[INFO]: recibido: $l" >> logs/latest.log; [[ $l == save-all* ]] && echo "[INFO]: Saved the game" >> logs/latest.log; [[ $l == stop ]] && exit 0; done\n' > "$TMP/jvm/java-21-openjdk/bin/java"
+    export MINECRAFT_TMUX="prueba-vigilar-$$" MINECRAFT_SIN_TERMINAL=1 MINECRAFT_VIGILAR=1 MINECRAFT_VIGILAR_INTERVALO=1 MINECRAFT_VIGILAR_MINUTO=1
+    export MINECRAFT_JUGADORES_FALSO="$TMP/conectados" MINECRAFT_APAGAR_PC_FALSO="$TMP/apagar-pc"
+    echo 1 > "$TMP/conectados"
+    MC ajuste "Amigos/26.3/26.3 Fab" APAGAR_VACIO 3 > /dev/null
+    MC iniciar "Amigos/26.3/26.3 Fab" > /dev/null
+    grep -q 'accept-download: true' "$F/config/bluemap/core.conf" && ok "iniciar: acepta la descarga de BlueMap" || mal "iniciar: BlueMap"
+    sleep 5
+    grep -q $'^SERVIDOR ENCENDIDO\tAmigos/26.3/26.3 Fab' <<< "$(MC servidores)" && ok "apagado automático: con jugadores sigue prendido" || mal "apagado automático: con jugadores"
+    # Con el servidor prendido, los jugadores se administran con comandos y el mundo se guarda pausando el guardado
+    MC jugador "Amigos/26.3/26.3 Fab" op Steve > /dev/null; sleep 0.5
+    grep -q 'recibido: op Steve' "$F/logs/latest.log" && ok "jugador (prendido): lo manda como comando" || mal "jugador prendido"
+    mkdir -p "$F/world"; echo x > "$F/world/level.dat"
+    MC respaldo-guardar "Amigos/26.3/26.3 Fab" > /dev/null
+    grep -q 'recibido: save-off' "$F/logs/latest.log" && grep -q 'recibido: save-on' "$F/logs/latest.log" && ok "respaldo-guardar (prendido): save-off, save-all y save-on" || mal "respaldo prendido"
+    echo 'accept-download: false' > "$F/config/bluemap/core.conf"; sleep 2
+    grep -q 'accept-download: true' "$F/config/bluemap/core.conf" && grep -q 'recibido: bluemap reload' "$F/logs/latest.log" \
+        && ok "BlueMap: acepta la descarga cuando aparece su core.conf y lo recarga" || mal "BlueMap en el primer arranque"
+    echo 0 > "$TMP/conectados"; sleep 2
+    igual "apagado automático: la lista dice en cuánto se apaga" "$(MC servidores | grep 'Amigos/26.3/26.3 Fab' | cut -f9)" "1"
+    for _ in $(seq 1 20); do grep -q $'^SERVIDOR APAGADO\tAmigos/26.3/26.3 Fab' <<< "$(MC servidores)" && break; sleep 0.5; done
+    grep -q $'^SERVIDOR APAGADO\tAmigos/26.3/26.3 Fab' <<< "$(MC servidores)" && ok "apagado automático: sin jugadores se apaga" || mal "apagado automático: sin jugadores"
+    sleep 1; grep -q 'apagar pc' "$TMP/apagar-pc" 2>/dev/null && ok "apagado automático: después pide apagar la PC" || mal "apagado automático: apagar la PC"
+    tmux -L "$MINECRAFT_TMUX" kill-server 2>/dev/null
+    unset MINECRAFT_TMUX MINECRAFT_SIN_TERMINAL MINECRAFT_VIGILAR_INTERVALO MINECRAFT_VIGILAR_MINUTO MINECRAFT_JUGADORES_FALSO MINECRAFT_APAGAR_PC_FALSO
+    export MINECRAFT_VIGILAR=0
 fi
 unset MINECRAFT_API_FALSA MINECRAFT_FABRIC_META MINECRAFT_JVM_DIR
 unset MINECRAFT_DIR

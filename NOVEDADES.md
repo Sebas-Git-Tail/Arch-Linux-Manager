@@ -3,6 +3,25 @@
 Lo que cambió en cada versión. El Manager lo muestra la primera vez que se abre una versión nueva y siempre
 desde el botón del regalito. Los cambios marcados [Sebastián] solo aparecen en sus equipos.
 
+## 4.15.0 (24/11/2026)
+- [Sebastián] Panel de Minecraft: apagado automático. Un servidor sin jugadores se apaga solo a los 10 minutos
+  (se cambia o se desactiva en Opciones) y, si la PC se prendió por WOL y nadie la está usando, después se apaga
+  la PC. La lista muestra en cuánto se va a apagar.
+- [Sebastián] Pestaña «Jugadores»: todos los que entraron alguna vez, quién está conectado, y botones para op,
+  lista blanca, banear, perdonar y expulsar (con el servidor prendido usa sus comandos; apagado, sus archivos).
+- [Sebastián] Pestaña «Opciones»: server.properties como formulario, con una explicación de cada opción; el
+  mensaje de la lista (MOTD) con colores, dos líneas y vista previa; ícono del servidor; y con un clic Geyser +
+  Floodgate (amigos con Bedrock) o BlueMap (mapa web).
+- [Sebastián] Pestaña «Respaldos»: los mundos guardados y los jars, plugins y mods reemplazados, con «Restaurar»
+  (guarda antes lo que hay) y «Guardar el mundo ahora» (también con el servidor prendido).
+- [Sebastián] «Cambiar versión…»: otro software o versión para un servidor que ya existe, o actualizar el
+  cargador de Fabric/Forge. Guarda el mundo antes, pasa los plugins/mods a la versión que sirve (de plugin a mod
+  si el proyecto tiene las dos), agrega las dependencias que falten, y no deja bajar por debajo de la versión del
+  mundo. La carpeta pasa a la de la versión nueva.
+- [Sebastián] «Pack para jugadores…» (servidores Fabric/Forge): un .mrpack con los mods que necesitan los que
+  entran, para abrir con Prism Launcher o la app de Modrinth.
+- [Sebastián] Arreglado: un mundo de Paper ahora abre al pasarlo a Vanilla, Fabric o Forge (al crear o cambiar).
+
 ## 4.14.0 (23/11/2026)
 - [Sebastián] Panel de Minecraft: «Crear servidor…» arma un servidor nuevo paso a paso: grupo y nombre,
   Vanilla, Paper, Fabric o Forge y la versión (solo las que existen para ese software), o un modpack de

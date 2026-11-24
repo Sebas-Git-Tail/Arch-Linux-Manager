@@ -4,6 +4,7 @@
 #include <QButtonGroup>
 #include <QCheckBox>
 #include <QComboBox>
+#include <QDialogButtonBox>
 #include <QDir>
 #include <QFileInfo>
 #include <QFileDialog>
@@ -21,6 +22,7 @@
 #include <QSpinBox>
 #include <QStandardItemModel>
 #include <QVBoxLayout>
+#include <QVersionNumber>
 #include <QWizardPage>
 
 #include <functional>
@@ -730,4 +732,130 @@ QByteArray AsistenteMinecraft::configuracion() const
         for (int i = 0; i < listaElegidos->count(); ++i)
             l << listaElegidos->item(i)->data(Qt::UserRole).toString();
     return (l.join(u'\n') + u'\n').toUtf8();
+}
+
+// --- Cambiar versión ------------------------------------------------------------------------------------
+
+DialogoVersionMinecraft::DialogoVersionMinecraft(const QString &script, const QString &servidor, const QString &tipo,
+                                                 const QString &version, QWidget *parent)
+    : QDialog(parent), tipoActual(tipo), versionActual(version)
+{
+    setWindowTitle(tr("Cambiar versión de %1").arg(QStringLiteral("%1 (%2)").arg(servidor.section(u'/', -1), servidor.section(u'/', 0, 0))));
+    resize(620, 420);
+    auto *actual = new QLabel(tr("Ahora: %1 %2").arg(nombreSoftware(tipo), version));
+    grupo = new QButtonGroup(this);
+    auto *capa = new QVBoxLayout(this);
+    capa->addWidget(actual);
+    const QStringList tipos = {QStringLiteral("paper"), QStringLiteral("vanilla"), QStringLiteral("fabric"), QStringLiteral("forge")};
+    for (int i = 0; i < tipos.size(); ++i) {
+        auto *radio = new QRadioButton(nombreSoftware(tipos.at(i)));
+        radio->setProperty("tipo", tipos.at(i));
+        grupo->addButton(radio, i);
+        capa->addWidget(radio);
+        if (tipos.at(i) == tipo)
+            radio->setChecked(true);
+    }
+    if (!grupo->checkedButton())
+        grupo->button(0)->setChecked(true);
+    comboVersion = new QComboBox;
+    auto *form = new QFormLayout;
+    form->addRow(tr("Versión de Minecraft:"), comboVersion);
+    capa->addLayout(form);
+    aviso = new QLabel;
+    aviso->setWordWrap(true);
+    capa->addWidget(aviso, 1);
+    auto *botones = new QDialogButtonBox(QDialogButtonBox::Cancel);
+    botonCambiar = botones->addButton(tr("Cambiar"), QDialogButtonBox::AcceptRole);
+    tema::marcarPrimario(botonCambiar);
+    botonCambiar->setEnabled(false);
+    capa->addWidget(botones);
+    connect(botones, &QDialogButtonBox::accepted, this, &QDialog::accept);
+    connect(botones, &QDialogButtonBox::rejected, this, &QDialog::reject);
+    connect(grupo, &QButtonGroup::idToggled, this, [this](int, bool marcado) { if (marcado) llenar(); });
+    connect(comboVersion, &QComboBox::currentIndexChanged, this, &DialogoVersionMinecraft::explicar);
+    connect(&opciones, &ProcesoLogica::evento, this, [this](const QString &palabra, const QString &resto) {
+        if (palabra != u"VERSION")
+            return;
+        const QString v = resto.section(u'\t', 0, 0);
+        software.insert(v, resto.section(u'\t', 1).split(u',', Qt::SkipEmptyParts));
+        orden << v;
+    });
+    connect(&opciones, &ProcesoLogica::terminado, this, [this](int codigo) {
+        if (codigo != 0 || orden.isEmpty())
+            tema::mostrarEstado(aviso, tr("No se pudieron consultar las versiones de Minecraft (¿hay internet?)."), tema::Estado::Error);
+        llenar();
+    });
+    tema::mostrarEstado(aviso, tr("Consultando las versiones de Minecraft…"));
+    opciones.iniciar(script, {QStringLiteral("opciones")});
+}
+
+DialogoVersionMinecraft::~DialogoVersionMinecraft()
+{
+    opciones.cancelarYEsperar();
+}
+
+QString DialogoVersionMinecraft::tipoElegido() const
+{
+    const QAbstractButton *b = grupo->checkedButton();
+    return b ? b->property("tipo").toString() : QString();
+}
+
+void DialogoVersionMinecraft::llenar()
+{
+    const QString t = tipoElegido();
+    for (QAbstractButton *b : grupo->buttons()) {
+        bool hay = false;
+        for (const QString &v : std::as_const(orden))
+            hay = hay || software.value(v).contains(b->property("tipo").toString());
+        b->setEnabled(orden.isEmpty() || hay);
+    }
+    const QString antes = comboVersion->currentData().toString();
+    const QSignalBlocker bloqueo(comboVersion);
+    comboVersion->clear();
+    for (const QString &v : std::as_const(orden))
+        if (software.value(v).contains(t))
+            comboVersion->addItem(v == versionActual ? tr("%1 (la que tiene)").arg(v) : v, v);
+    int i = comboVersion->findData(antes.isEmpty() ? versionActual : antes);
+    comboVersion->setCurrentIndex(i >= 0 ? i : 0);
+    explicar();
+}
+
+void DialogoVersionMinecraft::explicar()
+{
+    const QString t = tipoElegido();
+    const QString v = comboVersion->currentData().toString();
+    botonCambiar->setEnabled(!v.isEmpty());
+    if (v.isEmpty())
+        return;
+    QStringList l;
+    const bool usaba = tipoActual != u"vanilla", usa = t != u"vanilla";
+    const QString claseAntes = tipoActual == u"paper" ? tr("plugins") : tr("mods");
+    if (t == tipoActual && v == versionActual) {
+        l << (t == u"fabric" || t == u"forge" ? tr("Actualiza el cargador de %1 al último recomendado para %2.").arg(nombreSoftware(t), v)
+              : t == u"paper" ? tr("Baja la última compilación de Paper %1 (lo mismo que «Actualizar Paper»).").arg(v)
+                              : tr("Vuelve a bajar el servidor oficial %1.").arg(v));
+    } else {
+        l << tr("Pasa de %1 %2 a %3 %4.").arg(nombreSoftware(tipoActual), versionActual, nombreSoftware(t), v);
+        if (usaba && !usa)
+            l << tr("Vanilla no usa plugins ni mods: los que tiene quedan guardados en Respaldos.");
+        else if (usaba && usa)
+            l << tr("Los %1 pasan a su versión para %2 %3 (el mismo proyecto en Modrinth, también de plugin a mod); "
+                    "los que no tengan quedan en Respaldos. Las dependencias que falten se agregan solas.").arg(claseAntes, nombreSoftware(t), v);
+        if (QVersionNumber::fromString(v) < QVersionNumber::fromString(versionActual))
+            l << tr("Ojo: es una versión más vieja. Si el mundo ya se abrió en %1, no se va a poder (se comprueba antes de tocar nada).").arg(versionActual);
+        if (v != versionActual)
+            l << tr("Si la carpeta lleva la versión en el nombre («%1 …»), pasa a la de %2.").arg(versionActual, v);
+    }
+    l << tr("Antes se guarda el mundo en Respaldos; el jar anterior también queda ahí.");
+    tema::mostrarEstado(aviso, l.join(QStringLiteral("\n\n")));
+}
+
+QByteArray DialogoVersionMinecraft::configuracion() const
+{
+    return QStringLiteral("TIPO=%1\nVERSION=%2\n").arg(tipoElegido(), comboVersion->currentData().toString()).toUtf8();
+}
+
+QString DialogoVersionMinecraft::descripcion() const
+{
+    return nombreSoftware(tipoElegido()) + u' ' + comboVersion->currentData().toString();
 }

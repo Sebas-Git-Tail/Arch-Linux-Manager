@@ -15,6 +15,7 @@
 
 #include <QHash>
 #include <QStringList>
+#include <QDialog>
 #include <QWizard>
 
 class QButtonGroup;
@@ -105,4 +106,32 @@ private:
     QCheckBox *checkHardcore, *checkWhitelist, *checkOnline, *checkPvp, *checkEula;
     // 5. Resumen
     QPlainTextEdit *textoResumen;
+};
+
+// «Cambiar versión…» (desde la 4.15.0): otro software o versión para un servidor que ya existe, o el mismo,
+// para actualizar el cargador de Fabric/Forge. Solo ofrece versiones que existen para ese software (la consulta
+// «opciones», la misma del asistente) y explica qué va a pasar; lo hace «Minecraft.sh cambiar».
+class DialogoVersionMinecraft : public QDialog
+{
+    Q_OBJECT
+
+public:
+    DialogoVersionMinecraft(const QString &script, const QString &servidor, const QString &tipo, const QString &version,
+                            QWidget *parent = nullptr);
+    ~DialogoVersionMinecraft() override;
+    QByteArray configuracion() const;   // TIPO=…, VERSION=… para «Minecraft.sh cambiar»
+    QString descripcion() const;        // «Fabric 26.3»
+
+private:
+    void llenar();
+    void explicar();
+    QString tipoElegido() const;
+    ProcesoLogica opciones;
+    QHash<QString, QStringList> software;
+    QStringList orden;
+    QString tipoActual, versionActual;
+    QButtonGroup *grupo;
+    QComboBox *comboVersion;
+    QLabel *aviso;
+    QPushButton *botonCambiar;
 };

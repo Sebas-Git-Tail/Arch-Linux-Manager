@@ -554,18 +554,6 @@ def bajar_modrinth(url, sha512, destino):
 
 def propiedades(archivo, pares):
     """Escribe server.properties (clave=valor), con los caracteres raros escapados como Java."""
-    def escapar(texto, clave=False):
-        salida = ""
-        for c in texto:
-            if c in "\\":
-                salida += "\\\\"
-            elif c in "=:#!" or (clave and c == " "):
-                salida += "\\" + c
-            elif ord(c) < 0x20 or ord(c) > 0x7E:
-                salida += "\\u%04x" % ord(c)
-            else:
-                salida += c
-        return salida
     lineas = ["#Minecraft server properties (armado por Arch-Linux-Manager)"]
     for par in pares:
         clave, _, valor = par.partition("=")
@@ -686,6 +674,423 @@ def mundo(origen, destino):
     return 0
 
 
+# --- Jugadores (pestaña «Jugadores») ---------------------------------------------------------------
+NOMBRE_JUGADOR = re.compile(r"\.?[A-Za-z0-9_]{1,16}")    # (el punto adelante es de los de Bedrock, por Floodgate)
+
+
+def uuid_offline(nombre):
+    """El UUID que usa Minecraft con online-mode=false (UUID.nameUUIDFromBytes("OfflinePlayer:" + nombre))."""
+    import uuid
+    return str(uuid.UUID(bytes=hashlib.md5(("OfflinePlayer:" + nombre).encode()).digest(), version=3))
+
+
+def leer_lista(carpeta, archivo):
+    try:
+        with open(os.path.join(carpeta, archivo), encoding="utf-8") as f:
+            datos = json.load(f)
+        return datos if isinstance(datos, list) else []
+    except (OSError, ValueError):
+        return []
+
+
+def guardar_lista(carpeta, archivo, datos):
+    ruta = os.path.join(carpeta, archivo)
+    with open(ruta + ".nuevo", "w", encoding="utf-8") as f:
+        json.dump(datos, f, indent=2, ensure_ascii=False)
+        f.write("\n")
+    os.replace(ruta + ".nuevo", ruta)
+
+
+def jugadores_listar(carpeta, conectados=""):
+    """«JUGADOR <nombre>\t<uuid>\t<conectado 1|0>\t<nivel de op o vacío>\t<lista blanca 1|0>\t<baneado 1|0>\t<motivo>\t<visto>»
+    (todos los que alguna vez entraron, los ops, la lista blanca, los baneados y los conectados ahora)."""
+    import datetime
+    cache, ops = leer_lista(carpeta, "usercache.json"), leer_lista(carpeta, "ops.json")
+    blanca, baneados = leer_lista(carpeta, "whitelist.json"), leer_lista(carpeta, "banned-players.json")
+    ahora = {n for n in conectados.split(",") if n}
+    todos = {}
+
+    def sumar(nombre, uuid=""):
+        if not nombre:
+            return
+        j = todos.setdefault(nombre.lower(), {"nombre": nombre, "uuid": uuid, "visto": ""})
+        j["uuid"] = j["uuid"] or uuid
+
+    for j in cache:
+        sumar(j.get("name"), j.get("uuid", ""))
+        # usercache guarda «expiresOn»: un mes después de la última vez que entró
+        try:
+            vence = datetime.datetime.strptime(j.get("expiresOn", "")[:19], "%Y-%m-%d %H:%M:%S")
+            todos[j["name"].lower()]["visto"] = (vence - datetime.timedelta(days=30)).strftime("%Y-%m-%d")
+        except (ValueError, KeyError):
+            pass
+    for lista in (ops, blanca, baneados):
+        for j in lista:
+            sumar(j.get("name"), j.get("uuid", ""))
+    for n in ahora:
+        sumar(n)
+    nivel = {j.get("name", "").lower(): str(j.get("level", 4)) for j in ops}
+    en_blanca = {j.get("name", "").lower() for j in blanca}
+    motivo = {j.get("name", "").lower(): j.get("reason", "") for j in baneados}
+    for clave, j in sorted(todos.items(), key=lambda kv: (kv[1]["nombre"] not in ahora, kv[0])):
+        print("JUGADOR " + "\t".join(limpiar(x) for x in (
+            j["nombre"], j["uuid"], "1" if j["nombre"] in ahora else "0", nivel.get(clave, ""),
+            "1" if clave in en_blanca else "0", "1" if clave in motivo else "0", motivo.get(clave, ""), j["visto"])))
+    return 0
+
+
+def jugador_editar(carpeta, accion, nombre, motivo="", online="true"):
+    """Con el servidor apagado: cambia ops.json, whitelist.json o banned-players.json (prendido, lo hace el
+    propio servidor con sus comandos). acción: op, deop, whitelist-add, whitelist-remove, ban, pardon."""
+    if not NOMBRE_JUGADOR.fullmatch(nombre):
+        print("ERROR Nombre de jugador raro (3 a 16 letras, números o _).")
+        return 2
+    archivo = {"op": "ops.json", "deop": "ops.json", "whitelist-add": "whitelist.json", "whitelist-remove": "whitelist.json",
+               "ban": "banned-players.json", "pardon": "banned-players.json"}.get(accion)
+    if not archivo:
+        print("ERROR Acción de jugador desconocida.")
+        return 2
+    lista = leer_lista(carpeta, archivo)
+    resto = [j for j in lista if j.get("name", "").lower() != nombre.lower()]
+    if accion in ("deop", "whitelist-remove", "pardon"):
+        if len(resto) == len(lista):
+            print(f"AVISO {nombre} no estaba en {archivo}.")
+        guardar_lista(carpeta, archivo, resto)
+        return 0
+    # Para agregar hace falta el UUID: del que ya conoce el servidor, o el que calcula Minecraft
+    conocido = next((j for f in ("usercache.json", "ops.json", "whitelist.json", "banned-players.json")
+                     for j in leer_lista(carpeta, f) if j.get("name", "").lower() == nombre.lower() and j.get("uuid")), None)
+    if conocido:
+        uuid, nombre = conocido["uuid"], conocido["name"]
+    elif nombre.startswith("."):
+        print(f"ERROR {nombre} es de Bedrock y nunca entró: agregalo con el servidor prendido (o después de que entre).")
+        return 1
+    elif online == "false":
+        uuid = uuid_offline(nombre)
+    else:
+        try:
+            datos = pedir(f"https://api.mojang.com/users/profiles/minecraft/{q(nombre)}")
+            i = datos["id"]
+            uuid, nombre = f"{i[:8]}-{i[8:12]}-{i[12:16]}-{i[16:20]}-{i[20:]}", datos.get("name", nombre)
+        except (OSError, KeyError, ValueError, TypeError):
+            print(f"ERROR No existe la cuenta de Minecraft «{nombre}» (o no hubo internet).")
+            return 1
+    if accion == "op":
+        resto.append({"uuid": uuid, "name": nombre, "level": 4, "bypassesPlayerLimit": False})
+    elif accion == "whitelist-add":
+        resto.append({"uuid": uuid, "name": nombre})
+    else:
+        resto.append({"uuid": uuid, "name": nombre, "created": time_ahora(), "source": "Arch-Linux-Manager",
+                      "expires": "forever", "reason": motivo or "Baneado por un operador."})
+    guardar_lista(carpeta, archivo, resto)
+    return 0
+
+
+def time_ahora():
+    import time
+    return time.strftime("%Y-%m-%d %H:%M:%S %z")
+
+
+# --- server.properties (pestaña «Opciones») ---------------------------------------------------------------
+# clave: (tipo, parámetros, etiqueta, explicación, ¿siempre se muestra?). tipo: bool, enum (valor=Etiqueta,…),
+# int (mín:máx) o texto (largo máximo). Las demás claves del archivo no se tocan.
+CATALOGO = {
+    "motd": ("texto", "150", "Mensaje de la lista", "Lo que se ve debajo del nombre en la lista de servidores (admite colores y dos líneas).", True),
+    "gamemode": ("enum", "survival=Supervivencia,creative=Creativo,adventure=Aventura,spectator=Espectador", "Modo de juego",
+                 "El modo con el que entran los jugadores nuevos.", True),
+    "force-gamemode": ("bool", "", "Forzar el modo de juego", "Cada vez que alguien entra, vuelve al modo de juego del servidor.", False),
+    "difficulty": ("enum", "peaceful=Pacífico,easy=Fácil,normal=Normal,hard=Difícil", "Dificultad", "Cuánto daño hacen los monstruos y si aparecen.", True),
+    "hardcore": ("bool", "", "Hardcore", "Una sola vida: al morir, quedan como espectadores. Siempre en difícil.", True),
+    "pvp": ("bool", "", "PvP", "Los jugadores se pueden lastimar entre ellos (en las versiones nuevas es una regla del juego: /gamerule pvp).", False),
+    "max-players": ("int", "1:500", "Jugadores (máximo)", "Cuántos pueden estar conectados a la vez.", True),
+    "white-list": ("bool", "", "Lista blanca", "Solo entran los que estén en la lista blanca (pestaña Jugadores).", True),
+    "enforce-whitelist": ("bool", "", "Echar a los que no están en la lista", "Al activar la lista blanca, echa a los conectados que no estén.", False),
+    "online-mode": ("bool", "", "Comprobar cuentas de Minecraft",
+                    "Si se apaga, cualquiera puede entrar con cualquier nombre (hace falta para jugadores sin cuenta original). "
+                    "Cambiarlo cambia los UUID: inventarios y permisos se pierden.", True),
+    "view-distance": ("int", "2:32", "Distancia de visión", "Cuántos chunks alrededor de cada jugador se mandan (más = más carga).", True),
+    "simulation-distance": ("int", "2:32", "Distancia de simulación", "Hasta cuántos chunks se mueven los animales, cultivos y máquinas.", False),
+    "spawn-protection": ("int", "0:1000", "Protección del spawn", "Radio alrededor del spawn que solo los ops pueden romper (0 = ninguna).", False),
+    "allow-flight": ("bool", "", "Permitir volar", "Evita que el servidor eche a los que vuelan con mods o elytras raras.", False),
+    "allow-nether": ("bool", "", "Nether", "Se puede ir al Nether.", False),
+    "generate-structures": ("bool", "", "Estructuras", "Aldeas, templos, etc. (solo en lo que se genere de ahora en más).", False),
+    "level-seed": ("texto", "64", "Semilla", "Solo vale para un mundo nuevo (por ejemplo, después de «Reiniciar mundo»).", True),
+    "level-type": ("enum", "minecraft:normal=Normal,minecraft:flat=Plano,minecraft:large_biomes=Biomas grandes,minecraft:amplified=Amplificado",
+                   "Tipo de mundo", "Solo vale para un mundo nuevo.", False),
+    "player-idle-timeout": ("int", "0:1440", "Echar a los inactivos", "Minutos sin moverse antes de echar a alguien (0 = nunca).", False),
+    "enable-command-block": ("bool", "", "Bloques de comandos", "Permite que funcionen los bloques de comandos.", False),
+    "hide-online-players": ("bool", "", "Ocultar conectados", "La lista de servidores no muestra quién está jugando.", False),
+    "pause-when-empty-seconds": ("int", "-1:86400", "Pausar cuando no hay nadie", "Segundos sin jugadores hasta que el mundo se pausa (0 o -1 = nunca).", False),
+    "resource-pack": ("texto", "500", "Paquete de recursos (URL)", "Dirección de un paquete de recursos que se ofrece al entrar.", False),
+    "require-resource-pack": ("bool", "", "Exigir el paquete de recursos", "El que no lo acepta no puede entrar.", False),
+}
+NUMEROS_VIEJOS = {"gamemode": ["survival", "creative", "adventure", "spectator"], "difficulty": ["peaceful", "easy", "normal", "hard"]}
+
+
+def leer_propiedades(ruta):
+    """{clave: valor} de un .properties (con los escapes de Java)."""
+    valores = {}
+    lineas = leer_lineas(ruta)
+    for linea in lineas:
+        linea = linea.lstrip()
+        if not linea or linea[0] in "#!":
+            continue
+        clave, valor, i, escape = "", None, 0, False
+        texto = ""
+        while i < len(linea):
+            c = linea[i]
+            if escape:
+                if c == "u" and i + 4 < len(linea) + 1:
+                    try:
+                        texto += chr(int(linea[i + 1:i + 5], 16))
+                        i += 4
+                    except ValueError:
+                        texto += c
+                else:
+                    texto += {"n": "\n", "t": "\t", "r": "\r"}.get(c, c)
+                escape = False
+            elif c == "\\":
+                escape = True
+            elif valor is None and c in "=:":
+                clave, texto, valor = texto.strip(), "", ""
+            else:
+                texto += c
+            i += 1
+        if valor is None:
+            clave, texto = texto.strip(), ""
+        # Los emojis vienen como dos \\uXXXX (par sustituto): se juntan
+        valores[clave] = texto.lstrip().encode("utf-16", "surrogatepass").decode("utf-16", "replace")
+    return valores
+
+
+def leer_lineas(ruta):
+    """Las líneas de un .properties: Minecraft lo guarda en UTF-8 (las versiones viejas, en latin-1)."""
+    try:
+        with open(ruta, "rb") as f:
+            datos = f.read()
+    except OSError:
+        return []
+    try:
+        return datos.decode("utf-8").splitlines()
+    except UnicodeDecodeError:
+        return datos.decode("latin-1").splitlines()
+
+
+def escapar(texto, clave=False):
+    """Como lo escribe Java: solo ASCII; lo demás como \\uXXXX (los emojis, como par sustituto de UTF-16)."""
+    salida = ""
+    for c in texto:
+        if ord(c) > 0xFFFF:
+            n = ord(c) - 0x10000
+            salida += "\\u%04x\\u%04x" % (0xD800 + (n >> 10), 0xDC00 + (n & 0x3FF))
+            continue
+        if c == "\\":
+            salida += "\\\\"
+        elif c == "\n":
+            salida += "\\n"
+        elif c in "=:#!" or (clave and c == " "):
+            salida += "\\" + c
+        elif ord(c) < 0x20 or ord(c) > 0x7E:
+            salida += "\\u%04x" % ord(c)
+        else:
+            salida += c
+    return salida
+
+
+def opciones_servidor(carpeta):
+    """Las opciones conocidas con su explicación y su valor: «OPCION <clave>\t<tipo>\t<parámetros>\t<etiqueta>\t<explicación>\t<valor>».
+    Aparecen las de siempre y las que el servidor ya tiene en su archivo (así no se ofrece algo que esa versión no conoce)."""
+    valores = leer_propiedades(os.path.join(carpeta, "server.properties"))
+    for clave, (tipo, param, etiqueta, ayuda, siempre) in CATALOGO.items():
+        if not siempre and clave not in valores:
+            continue
+        valor = valores.get(clave, "")
+        if clave in NUMEROS_VIEJOS and valor.isdigit() and int(valor) < 4:
+            valor = NUMEROS_VIEJOS[clave][int(valor)]
+        print("OPCION " + "\t".join([clave, tipo, param, etiqueta, ayuda, valor.replace("\\", "\\\\").replace("\n", "\\n").replace("\t", " ")]))
+    return 0
+
+
+def opcion_valida(clave, valor):
+    tipo, param = CATALOGO[clave][0], CATALOGO[clave][1]
+    if tipo == "bool":
+        return valor in ("true", "false")
+    if tipo == "enum":
+        return valor in [p.split("=", 1)[0] for p in param.split(",")]
+    if tipo == "int":
+        minimo, maximo = (int(x) for x in param.split(":"))
+        return re.fullmatch(r"-?[0-9]{1,6}", valor) is not None and minimo <= int(valor) <= maximo
+    return len(valor) <= int(param) and not any(ord(c) < 0x20 and c != "\n" for c in valor)
+
+
+def propiedades_cambiar(ruta, version_mc, pares):
+    """Cambia las opciones dadas (clave=valor, solo las del catálogo) sin tocar el resto del archivo.
+    En versiones de antes de la 1.13, modo y dificultad van como números."""
+    nuevos = {}
+    for par in pares:
+        clave, _, valor = par.partition("=")
+        valor = valor.replace("\\n", "\n")
+        if clave not in CATALOGO:
+            print(f"ERROR No se puede cambiar «{limpiar(clave)}» desde acá.")
+            return 2
+        if not opcion_valida(clave, valor):
+            print(f"ERROR Valor raro para {CATALOGO[clave][2]}.")
+            return 2
+        m = re.match(r"1\.(\d+)", version_mc)
+        if clave in NUMEROS_VIEJOS and m and int(m.group(1)) < 13:
+            valor = str(NUMEROS_VIEJOS[clave].index(valor))
+        nuevos[clave] = valor
+    lineas = leer_lineas(ruta)
+    salida, hechos = [], set()
+    for linea in lineas:
+        clave = re.split(r"(?<!\\)[=:]", linea.lstrip(), maxsplit=1)[0].strip().replace("\\", "")
+        if clave in nuevos and not linea.lstrip().startswith(("#", "!")):
+            salida.append(f"{escapar(clave, True)}={escapar(nuevos[clave])}")
+            hechos.add(clave)
+        else:
+            salida.append(linea)
+    for clave, valor in nuevos.items():
+        if clave not in hechos:
+            salida.append(f"{escapar(clave, True)}={escapar(valor)}")
+    with open(ruta + ".nuevo", "w", encoding="utf-8") as f:
+        f.write("\n".join(salida) + "\n")
+    os.replace(ruta + ".nuevo", ruta)
+    return 0
+
+
+def mundo_version(level_dat):
+    try:
+        print(f"MUNDO {limpiar(nbt_version(level_dat) or '?')}")
+    except (OSError, ValueError, EOFError):
+        print("MUNDO ?")
+    return 0
+
+
+def es_png64(ruta):
+    """¿Es un PNG de 64×64? (lo que acepta Minecraft como server-icon.png)"""
+    with open(ruta, "rb") as f:
+        cabecera = f.read(24)
+    ok = cabecera[:8] == b"\x89PNG\r\n\x1a\n" and cabecera[12:16] == b"IHDR" and struct.unpack(">II", cabecera[16:24]) == (64, 64)
+    print("PNG64 si" if ok else "PNG64 no")
+    return 0 if ok else 1
+
+
+def floodgate_paper():
+    """Floodgate para Paper (no está en Modrinth): «COMPLEMENTO floodgate\tFloodgate\t<versión>\t<url>\tsha256:<suma>\tfloodgate-spigot.jar\tpedido»"""
+    d = pedir("https://download.geysermc.org/v2/projects/floodgate/versions/latest/builds/latest")
+    archivo = d["downloads"]["spigot"]
+    url = f"https://download.geysermc.org/v2/projects/floodgate/versions/{q(d['version'])}/builds/{int(d['build'])}/downloads/spigot"
+    print("COMPLEMENTO " + "\t".join(limpiar(x) for x in ("floodgate", "Floodgate", f"{d['version']}-b{d['build']}", url,
+                                                           "sha256:" + archivo["sha256"], "floodgate-spigot.jar", "pedido")))
+    return 0
+
+
+def dependencias(tipo, version_mc, rutas):
+    """Las dependencias obligatorias que les faltan a esos plugins o mods (reconocidos en Modrinth por su suma),
+    como líneas COMPLEMENTO (ver complementos)."""
+    if tipo not in CARGADORES_TIPO or not rutas:
+        return 0
+    sha1 = {}
+    for r in rutas:
+        with open(r, "rb") as f:
+            sha1[r] = hashlib.sha1(f.read()).hexdigest()
+    try:
+        versiones = pedir(f"{MODRINTH}/version_files", {"hashes": list(sha1.values()), "algorithm": "sha1"})
+    except OSError:
+        return 0
+    tienen = {v["project_id"] for v in versiones.values()}
+    faltan = {d["project_id"] for v in versiones.values() for d in v.get("dependencies") or []
+              if d.get("dependency_type") == "required" and d.get("project_id") and d["project_id"] not in tienen}
+    if not faltan:
+        return 0
+    import io
+    import contextlib
+    salida = io.StringIO()
+    with contextlib.redirect_stdout(salida):
+        for pid in sorted(faltan):
+            try:
+                p = pedir(f"{MODRINTH}/project/{q(pid)}")
+                complementos(tipo, version_mc, [p["slug"]])
+            except OSError:
+                pass
+    for linea in salida.getvalue().splitlines():
+        if linea.startswith("COMPLEMENTO "):
+            partes = linea.split("\t")
+            print("\t".join(partes[:6] + ["falta para los demás"]))
+        else:
+            print(linea)
+    return 0
+
+
+def pack_jugadores(carpeta, tipo, version_mc, loader, nombre, destino):
+    """Un .mrpack para los jugadores (se abre con Prism o la app de Modrinth): los mods del servidor que también
+    van en el juego, con su descarga de Modrinth. Si el servidor salió de un modpack, parte de ese pack (que también
+    trae lo que es solo del cliente). Los que no están en Modrinth van adentro del pack."""
+    if tipo not in ("fabric", "forge"):
+        print("ERROR Solo los servidores Fabric o Forge tienen mods para los jugadores.")
+        return 2
+    archivos, conocidos, extras = [], set(), []
+    original = os.path.join(carpeta, ".modpack.mrpack")
+    base = None
+    if os.path.isfile(original):
+        base = zipfile.ZipFile(original)
+        indice = json.loads(base.read("modrinth.index.json"))
+        archivos = indice.get("files", [])
+        conocidos = {f.get("hashes", {}).get("sha1") for f in archivos}
+    mods = sorted(os.path.join(carpeta, "mods", n) for n in os.listdir(os.path.join(carpeta, "mods"))
+                  if n.endswith(".jar")) if os.path.isdir(os.path.join(carpeta, "mods")) else []
+    sumas = {}
+    for r in mods:
+        with open(r, "rb") as f:
+            datos = f.read()
+        sumas[r] = (hashlib.sha1(datos).hexdigest(), hashlib.sha512(datos).hexdigest(), len(datos))
+    nuevos = [r for r in mods if sumas[r][0] not in conocidos]
+    versiones = {}
+    if nuevos:
+        try:
+            versiones = pedir(f"{MODRINTH}/version_files", {"hashes": [sumas[r][0] for r in nuevos], "algorithm": "sha1"})
+        except OSError as e:
+            print(f"AVISO No se pudo consultar Modrinth ({limpiar(e)}): los mods van adentro del pack.")
+    lados = {}
+    ids = sorted({v["project_id"] for v in versiones.values()})
+    if ids:
+        try:
+            for p in pedir(f"{MODRINTH}/projects?ids=" + q(json.dumps(ids))):
+                lados[p["id"]] = p.get("client_side", "required")
+        except OSError:
+            pass
+    solo_servidor = 0
+    for r in nuevos:
+        s1, s512, tam = sumas[r]
+        v = versiones.get(s1)
+        if v and lados.get(v["project_id"]) == "unsupported":
+            solo_servidor += 1
+            continue
+        archivo = archivo_principal(v) if v else None
+        if archivo and archivo.get("hashes", {}).get("sha1") == s1:
+            cliente = "optional" if lados.get(v["project_id"]) == "optional" else "required"
+            archivos.append({"path": "mods/" + os.path.basename(r), "hashes": {"sha1": s1, "sha512": s512},
+                             "env": {"client": cliente, "server": "required"}, "downloads": [archivo["url"]], "fileSize": tam})
+        else:
+            extras.append(r)
+    clave = "fabric-loader" if tipo == "fabric" else "forge"
+    indice = {"formatVersion": 1, "game": "minecraft", "versionId": time_ahora()[:10], "name": f"{nombre} (para jugadores)",
+              "summary": f"Mods para entrar a {nombre} (armado por Arch-Linux-Manager)",
+              "files": archivos, "dependencies": {"minecraft": version_mc, clave: loader}}
+    tmp = destino + ".parcial"
+    with zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED) as z:
+        z.writestr("modrinth.index.json", json.dumps(indice, indent=2, ensure_ascii=False))
+        if base:
+            for info in base.infolist():
+                if info.filename.startswith(("overrides/", "client-overrides/")) and not info.is_dir():
+                    z.writestr(info.filename, base.read(info))
+        for r in extras:
+            z.write(r, "overrides/mods/" + os.path.basename(r))
+    os.replace(tmp, destino)
+    print(f"PACK {len(archivos)}\t{len(extras)}\t{solo_servidor}")
+    return 0
+
+
 def varint(n):
     n &= 0xFFFFFFFF
     salida = b""
@@ -773,6 +1178,24 @@ def main(args):
         return propiedades(args[1], args[2:])
     if len(args) == 3 and args[0] == "mundo":
         return mundo(args[1], args[2])
+    if len(args) in (2, 3) and args[0] == "jugadores-listar":
+        return jugadores_listar(args[1], args[2] if len(args) == 3 else "")
+    if len(args) in (4, 5, 6) and args[0] == "jugador-editar":
+        return jugador_editar(*args[1:])
+    if len(args) == 2 and args[0] == "opciones-servidor":
+        return opciones_servidor(args[1])
+    if len(args) >= 3 and args[0] == "propiedades-cambiar":
+        return propiedades_cambiar(args[1], args[2], args[3:])
+    if len(args) == 2 and args[0] == "mundo-version":
+        return mundo_version(args[1])
+    if len(args) == 2 and args[0] == "png64":
+        return es_png64(args[1])
+    if args == ["floodgate-paper"]:
+        return floodgate_paper()
+    if len(args) >= 3 and args[0] == "dependencias":
+        return dependencias(args[1], args[2], args[3:])
+    if len(args) == 7 and args[0] == "pack-jugadores":
+        return pack_jugadores(*args[1:])
     if len(args) == 2 and args[0] == "ping":
         return ping(args[1])
     print(__doc__, file=sys.stderr)

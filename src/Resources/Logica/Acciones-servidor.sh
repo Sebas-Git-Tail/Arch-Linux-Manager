@@ -7,7 +7,8 @@
 # sirve para pedir las acciones de su lista, ni siquiera abre una terminal. Hasta que se autoriza en
 # el servidor, la acción falla y la clave pública queda copiada en el portapapeles.
 #
-# Uso: Acciones-servidor.sh miniaturas-bodrio|descargas|indices-instituto
+# Uso: Acciones-servidor.sh miniaturas-bodrio|descargas|indices-instituto|pc-apagar
+# (pc-apagar lo usa el apagado automático de Minecraft: el servidor decide si se puede apagar la PC)
 #
 # Eventos: LINEA <texto> (lo que va diciendo el servidor) / LISTO <texto> / ERROR <texto>
 # Código de salida: 0 bien, 1 falló, 2 error de uso o equipo sin autorizar.
@@ -19,7 +20,7 @@ error() { emitir "ERROR $1"; exit "${2:-1}"; }
 
 accion="${1:-}"
 case "$accion" in
-    miniaturas-bodrio|descargas|indices-instituto) ;;
+    miniaturas-bodrio|descargas|indices-instituto|pc-apagar) ;;
     *) error "Acción desconocida: $accion" 2 ;;
 esac
 
