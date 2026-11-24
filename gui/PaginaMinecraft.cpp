@@ -2,47 +2,41 @@
 #include "AsistenteMinecraft.h"
 #include "PestanasMinecraft.h"
 #include "Tema.h"
-#include "ui_PaginaMinecraft.h"
+#include "VistasMinecraft.h"
 
 #include <QDate>
-#include <QFileDialog>
-#include <QStandardPaths>
 #include <QDir>
+#include <QFileDialog>
 #include <QFontDatabase>
+#include <QFrame>
+#include <QHBoxLayout>
 #include <QHeaderView>
 #include <QInputDialog>
 #include <QKeyEvent>
+#include <QLabel>
+#include <QLineEdit>
+#include <QListWidget>
 #include <QLocale>
+#include <QMenu>
 #include <QMessageBox>
+#include <QPlainTextEdit>
+#include <QProgressBar>
 #include <QPushButton>
 #include <QRegularExpression>
 #include <QScrollBar>
-#include <QTimer>
-#include <QTreeWidgetItemIterator>
+#include <QStackedWidget>
+#include <QStandardPaths>
+#include <QTreeWidget>
+#include <QVBoxLayout>
 
-// Datos de cada fila de la lista de servidores (en la columna 0)
-constexpr int RolNombre = Qt::UserRole;          // «Amigos/26.1/26.1.2 SMP-1» (vacío en las filas de grupo)
-constexpr int RolEncendido = Qt::UserRole + 1;
-constexpr int RolRam = Qt::UserRole + 2;
-constexpr int RolTipo = Qt::UserRole + 3;
-constexpr int RolVersion = Qt::UserRole + 4;
-
-// Los servidores se identifican por su ruta dentro de Servidores/ (<grupo>/<versión>/<servidor>): en la
-// lista van dentro de su grupo y en los mensajes se muestran como «26.1.2 SMP-1 (Amigos)».
+// Los servidores se identifican por su ruta dentro de Servidores/ (<grupo>/<versión>/<servidor>) y en los
+// mensajes se muestran como «26.1.2 SMP-1 (Amigos)».
 static QString etiqueta(const QString &servidor)
 {
     const int barra = servidor.indexOf(u'/');
     if (barra < 0)
         return servidor;
     return QStringLiteral("%1 (%2)").arg(servidor.section(u'/', -1), servidor.left(barra));
-}
-
-static QString nombreTipo(const QString &tipo)
-{
-    if (tipo == u"forge") return QStringLiteral("Forge");
-    if (tipo == u"fabric") return QStringLiteral("Fabric");
-    if (tipo == u"vanilla") return QStringLiteral("Vanilla");
-    return QStringLiteral("Paper");
 }
 
 static QStringList etiquetas(const QStringList &servidores)
@@ -53,99 +47,83 @@ static QStringList etiquetas(const QStringList &servidores)
     return lista;
 }
 
-PaginaMinecraft::PaginaMinecraft(const QString &logica, QWidget *parent)
-    : QWidget(parent), ui(new Ui::PaginaMinecraft),
-      script(QDir(logica).filePath(QStringLiteral("Minecraft.sh")))
+static QString nombreTipo(const QString &tipo)
 {
-    ui->setupUi(this);
-    ui->barraProgreso->hide();
-    ui->botonCancelar->hide();
-    ui->textoConsola->setFont(QFontDatabase::systemFont(QFontDatabase::FixedFont));
-    ui->editComando->installEventFilter(this);
-    ui->editComando->setProperty("ayuda", ui->editComando->placeholderText());
-    temporizadorJugadores.setInterval(10000);
-    connect(&temporizadorJugadores, &QTimer::timeout, this, &PaginaMinecraft::consultarJugadores);
-    ui->arbolServidores->header()->setSectionResizeMode(0, QHeaderView::Stretch);
-    for (int c = 1; c < ui->arbolServidores->columnCount(); ++c)
-        ui->arbolServidores->header()->setSectionResizeMode(c, QHeaderView::ResizeToContents);
-    ui->arbolPlugins->header()->setSectionResizeMode(0, QHeaderView::Stretch);
-    for (int c = 1; c < ui->arbolPlugins->columnCount(); ++c)
-        ui->arbolPlugins->header()->setSectionResizeMode(c, QHeaderView::ResizeToContents);
+    if (tipo == u"forge") return QStringLiteral("Forge");
+    if (tipo == u"fabric") return QStringLiteral("Fabric");
+    if (tipo == u"vanilla") return QStringLiteral("Vanilla");
+    return QStringLiteral("Paper");
+}
 
-    // Pestañas Jugadores, Opciones y Respaldos (PestanasMinecraft): lo que cambian lo corre el panel
+static QFrame *separador()
+{
+    auto *linea = new QFrame;
+    linea->setFrameShape(QFrame::HLine);
+    linea->setStyleSheet(QStringLiteral("color:%1;").arg(tema::colores().borde.name()));
+    return linea;
+}
+
+// Páginas de la vista del servidor (el orden de la lista de la izquierda)
+enum Pagina { PaginaConsola, PaginaPlugins, PaginaJugadores, PaginaOpciones, PaginaRespaldos };
+
+PaginaMinecraft::PaginaMinecraft(const QString &logica, QWidget *parent)
+    : QWidget(parent), script(QDir(logica).filePath(QStringLiteral("Minecraft.sh")))
+{
+    setWindowTitle(tr("Panel de Minecraft"));
     pestanaJugadores = new PestanaJugadores(script, this);
     pestanaOpciones = new PestanaOpciones(script, this);
     pestanaRespaldos = new PestanaRespaldos(script, this);
-    int posicion = ui->pestanasServidor->indexOf(ui->pestanaPlugins) + 1;
-    ui->pestanasServidor->insertTab(posicion++, pestanaJugadores, tr("Jugadores"));
-    ui->pestanasServidor->insertTab(posicion++, pestanaOpciones, tr("Opciones"));
-    ui->pestanasServidor->insertTab(posicion, pestanaRespaldos, tr("Respaldos"));
+
+    vistas = new QStackedWidget;
+    vistas->addWidget(armarVistaServidores());
+    vistas->addWidget(armarVistaServidor());
+
+    // Abajo: lo que está pasando (con Cancelar), los avisos y el resumen del elegido (como la barra de Prism)
+    etiquetaEstado = new QLabel;
+    etiquetaEstado->setWordWrap(true);
+    barraProgreso = new QProgressBar;
+    barraProgreso->setMaximumWidth(180);
+    barraProgreso->setTextVisible(false);
+    barraProgreso->hide();
+    botonCancelar = new QPushButton(tr("Cancelar"));
+    botonCancelar->hide();
+    botonAvisos = new QPushButton(tema::icono(QStringLiteral("reporte")), tr("Avisos"));
+    botonAvisos->setProperty("plano", true);
+    botonAvisos->setCheckable(true);
+    resumen = new QLabel;
+    resumen->setStyleSheet(QStringLiteral("color:%1;").arg(tema::colores().texto3.name()));
+    registroAvisos = new QPlainTextEdit;
+    registroAvisos->setReadOnly(true);
+    registroAvisos->setMaximumHeight(130);
+    registroAvisos->setPlaceholderText(tr("Avisos y errores"));
+    registroAvisos->hide();
+    auto *barraAbajo = new QHBoxLayout;
+    barraAbajo->addWidget(etiquetaEstado, 1);
+    barraAbajo->addWidget(barraProgreso);
+    barraAbajo->addWidget(botonCancelar);
+    barraAbajo->addWidget(botonAvisos);
+    barraAbajo->addWidget(resumen);
+
+    auto *capa = new QVBoxLayout(this);
+    capa->setContentsMargins(0, 0, 0, 0);
+    capa->addWidget(vistas, 1);
+    capa->addWidget(registroAvisos);
+    capa->addWidget(separador());
+    capa->addLayout(barraAbajo);
+
+    temporizadorJugadores.setInterval(10000);
+    connect(&temporizadorJugadores, &QTimer::timeout, this, &PaginaMinecraft::consultarJugadores);
+    connect(botonCancelar, &QPushButton::clicked, &accion, &ProcesoLogica::cancelar);
+    connect(botonAvisos, &QPushButton::toggled, this, [this](bool ver) {
+        registroAvisos->setVisible(ver);
+        avisosSinVer = 0;
+        botonAvisos->setText(tr("Avisos"));
+    });
     for (PestanaServidor *p : pestanas())
         connect(p, &PestanaServidor::accion, this, [this](const QStringList &argumentos, const QString &estado, const QByteArray &entrada) {
             if (!accion.ocupado())
                 ejecutar(argumentos, estado, entrada);
         });
-    botonCambiarVersion = new QPushButton(tema::icono(QStringLiteral("actualizar")), tr("Cambiar versión…"));
-    botonCambiarVersion->setToolTip(tr("Otro software o versión (o actualizar el cargador de Fabric/Forge), guardando el mundo antes"));
-    ui->layoutAccionesServidor2->insertWidget(ui->layoutAccionesServidor2->indexOf(ui->botonRam), botonCambiarVersion);
-    connect(botonCambiarVersion, &QPushButton::clicked, this, &PaginaMinecraft::cambiarVersion);
-    botonPack = new QPushButton(tema::icono(QStringLiteral("paquete")), tr("Pack para jugadores…"));
-    botonPack->setToolTip(tr("Un .mrpack con los mods que necesitan los jugadores (se abre con Prism Launcher o la app de Modrinth)"));
-    ui->layoutAccionesPlugins->addWidget(botonPack);
-    connect(botonPack, &QPushButton::clicked, this, &PaginaMinecraft::packJugadores);
-
-    connect(ui->arbolServidores, &QTreeWidget::currentItemChanged, this, [this] {
-        elegido = servidorElegido();
-        actualizarPestanas();
-        actualizarBotones();
-        if (elegido != pluginsDe)
-            consultarPlugins();
-        if (elegido != consolaDe)
-            verConsola();
-    });
-    connect(ui->arbolServidores, &QTreeWidget::itemChanged, this, [this](QTreeWidgetItem *item, int columna) {
-        const QString nombre = item->data(0, RolNombre).toString();
-        if (columna == 0 && item->childCount() > 0)
-            clicEnCasilla = true;
-        if (columna != 0 || nombre.isEmpty())
-            return;
-        if (item->checkState(0) == Qt::Checked)
-            marcados.insert(nombre);
-        else
-            marcados.remove(nombre);
-    });
-    // Grupos desplegables: tocar la fila del grupo lo abre o lo cierra, y se recuerda al actualizar la lista
-    // (si el clic fue en la casilla del grupo, solo se marca: itemChanged llega antes que itemClicked)
-    connect(ui->arbolServidores, &QTreeWidget::itemPressed, this, [this] { clicEnCasilla = false; });
-    connect(ui->arbolServidores, &QTreeWidget::itemClicked, this, [this](QTreeWidgetItem *item) {
-        if (item->childCount() > 0 && !clicEnCasilla)
-            item->setExpanded(!item->isExpanded());
-    });
-    connect(ui->arbolServidores, &QTreeWidget::itemExpanded, this, [this](QTreeWidgetItem *item) {
-        gruposAbiertos.insert(item->text(0), true);
-    });
-    connect(ui->arbolServidores, &QTreeWidget::itemCollapsed, this, [this](QTreeWidgetItem *item) {
-        gruposAbiertos.insert(item->text(0), false);
-    });
-    connect(ui->botonIniciar, &QPushButton::clicked, this, &PaginaMinecraft::iniciar);
-    connect(ui->botonDetener, &QPushButton::clicked, this, &PaginaMinecraft::detener);
-    connect(ui->botonReiniciar, &QPushButton::clicked, this, &PaginaMinecraft::reiniciar);
-    connect(ui->botonActualizarLista, &QPushButton::clicked, this, &PaginaMinecraft::consultar);
-    connect(ui->botonCrear, &QPushButton::clicked, this, &PaginaMinecraft::crearServidor);
-    ui->botonCrear->setIcon(tema::icono(QStringLiteral("agregar")));
-    connect(ui->botonPaper, &QPushButton::clicked, this, &PaginaMinecraft::actualizarPaper);
-    connect(ui->botonRam, &QPushButton::clicked, this, &PaginaMinecraft::cambiarRam);
-    connect(ui->botonReiniciarMundo, &QPushButton::clicked, this, &PaginaMinecraft::reiniciarMundo);
-    connect(ui->botonCarpeta, &QPushButton::clicked, this, &PaginaMinecraft::abrirCarpeta);
-    connect(ui->botonBuscarPlugins, &QPushButton::clicked, this, &PaginaMinecraft::consultarPlugins);
-    connect(ui->botonActualizarPlugins, &QPushButton::clicked, this, &PaginaMinecraft::actualizarPlugins);
-    connect(ui->botonPlugin, &QPushButton::clicked, this, &PaginaMinecraft::instalarPlugin);
-    connect(ui->editPlugin, &QLineEdit::returnPressed, this, &PaginaMinecraft::instalarPlugin);
-    connect(ui->botonJugar, &QPushButton::clicked, this, &PaginaMinecraft::jugar);
-    connect(ui->botonEnviar, &QPushButton::clicked, this, &PaginaMinecraft::enviarComando);
-    connect(ui->editComando, &QLineEdit::returnPressed, this, &PaginaMinecraft::enviarComando);
-    connect(ui->botonTerminal, &QPushButton::clicked, this, &PaginaMinecraft::abrirTerminal);
-    connect(ui->botonCancelar, &QPushButton::clicked, &accion, &ProcesoLogica::cancelar);
 
     connect(&consulta, &ProcesoLogica::evento, this, &PaginaMinecraft::eventoConsulta);
     connect(&consulta, &ProcesoLogica::terminado, this, &PaginaMinecraft::terminoConsulta);
@@ -154,13 +132,15 @@ PaginaMinecraft::PaginaMinecraft(const QString &logica, QWidget *parent)
         if (cancelado)
             return;
         const QString clase = pluginsSonMods ? tr("Mods") : tr("Plugins");
-        if (ui->arbolPlugins->topLevelItemCount() == 0 && codigo == 0)
-            ui->arbolPlugins->setHeaderLabels({pluginsSonMods ? tr("Mod (no tiene)") : tr("Plugin (no tiene)"), tr("Versión"), tr("Nueva"), tr("Estado")});
-        ui->grupoPlugins->setTitle(pluginsNuevos > 0
-            ? tr("%1 de %2: %3 con versión nueva").arg(clase, etiqueta(pluginsDe)).arg(pluginsNuevos)
-            : tr("%1 de %2").arg(clase, etiqueta(pluginsDe)));
-        ui->pestanasServidor->setTabText(ui->pestanasServidor->indexOf(ui->pestanaPlugins),
-            pluginsNuevos > 0 ? tr("%1 (%2 con versión nueva)").arg(clase).arg(pluginsNuevos) : clase);
+        if (arbolPlugins->topLevelItemCount() == 0 && codigo == 0)
+            tema::mostrarEstado(estadoPlugins, pluginsSonMods ? tr("No tiene mods.") : tr("No tiene plugins."));
+        else
+            tema::mostrarEstado(estadoPlugins, pluginsNuevos > 0 ? tr("%1 con versión nueva en Modrinth.").arg(pluginsNuevos)
+                                                                 : tr("Todos al día (los que están en Modrinth)."),
+                                pluginsNuevos > 0 ? tema::Estado::Aviso : tema::Estado::Neutro);
+        listaPaginas->item(PaginaPlugins)->setText(pluginsNuevos > 0 ? tr("%1 (%2)").arg(clase).arg(pluginsNuevos) : clase);
+        if (paginas->currentIndex() == PaginaPlugins)
+            tituloPagina->setText(clase);
         actualizarBotones();
     });
     connect(&accion, &ProcesoLogica::evento, this, &PaginaMinecraft::eventoAccion);
@@ -169,11 +149,12 @@ PaginaMinecraft::PaginaMinecraft(const QString &logica, QWidget *parent)
     connect(&conectados, &ProcesoLogica::evento, this, &PaginaMinecraft::eventoJugadores);
     connect(&envio, &ProcesoLogica::evento, this, [this](const QString &palabra, const QString &resto) {
         if (palabra == u"ERROR")
-            tema::mostrarEstado(ui->etiquetaEstado, resto, tema::Estado::Error);
+            tema::mostrarEstado(etiquetaEstado, resto, tema::Estado::Error);
         else if (palabra == u"LISTO" && !resto.startsWith(u"Enviado"))
-            tema::mostrarEstado(ui->etiquetaEstado, resto, tema::Estado::Ok);
+            tema::mostrarEstado(etiquetaEstado, resto, tema::Estado::Ok);
     });
     connect(&envio, &ProcesoLogica::terminado, this, [this] { actualizarBotones(); });
+    mostrarElegido();
 }
 
 PaginaMinecraft::~PaginaMinecraft()
@@ -182,8 +163,399 @@ PaginaMinecraft::~PaginaMinecraft()
     registro.cancelarYEsperar();
     conectados.cancelarYEsperar();
     envio.cancelarYEsperar();
-    delete ui;
 }
+
+// --- Vista «Servidores» (la ventana principal de Prism) ----------------------------------------------------------
+
+QWidget *PaginaMinecraft::armarVistaServidores()
+{
+    const tema::Colores &c = tema::colores();
+    auto *vista = new QWidget;
+
+    // Barra de arriba
+    botonCrear = botonAccion(QStringLiteral("agregar"), c.ok, tr("Crear servidor"));
+    botonCarpetas = botonAccion(QStringLiteral("carpeta"), c.aviso, tr("Carpetas"));
+    auto *menuCarpetas = new QMenu(botonCarpetas);
+    menuCarpetas->addAction(tema::icono(QStringLiteral("carpeta")), tr("Servidores"), this, [this] {
+        ejecutar({QStringLiteral("abrir-carpeta"), QStringLiteral("servidores")}, tr("Abriendo la carpeta…"));
+    });
+    menuCarpetas->addAction(tema::icono(QStringLiteral("respaldo")), tr("Respaldos"), this, [this] {
+        ejecutar({QStringLiteral("abrir-carpeta"), QStringLiteral("respaldos")}, tr("Abriendo la carpeta…"));
+    });
+    botonCarpetas->setMenu(menuCarpetas);
+    botonActualizarLista = botonAccion(QStringLiteral("sincronizar"), c.acento, tr("Actualizar"));
+    botonPaper = botonAccion(QStringLiteral("descargar"), c.acento, tr("Actualizar Paper"));
+    botonPaper->setToolTip(tr("La última compilación estable de Paper (de su misma versión) para los servidores elegidos"));
+    botonJugar = botonAccion(QStringLiteral("juego"), c.ok, tr("Jugar"));
+    botonJugar->setToolTip(tr("Abrir una instancia de Prism Launcher (entra sola al servidor de casa)"));
+    menuJugar = new QMenu(botonJugar);
+    botonJugar->setMenu(menuJugar);
+    for (QPushButton *b : {botonCrear, botonCarpetas, botonActualizarLista, botonPaper, botonJugar})
+        b->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+    auto *barra = new QHBoxLayout;
+    barra->setContentsMargins(0, 0, 0, 0);
+    barra->addWidget(botonCrear);
+    barra->addWidget(botonCarpetas);
+    barra->addWidget(botonActualizarLista);
+    barra->addWidget(botonPaper);
+    barra->addStretch();
+    barra->addWidget(botonJugar);
+
+    grilla = new GrillaServidores;
+
+    // A la derecha: el elegido y su columna de acciones
+    auto *panel = new QWidget;
+    panel->setFixedWidth(240);
+    iconoElegido = new QLabel;
+    iconoElegido->setAlignment(Qt::AlignCenter);
+    iconoElegido->setMinimumHeight(72);
+    nombreElegido = new QLabel;
+    nombreElegido->setAlignment(Qt::AlignCenter);
+    nombreElegido->setWordWrap(true);
+    QFont grande = nombreElegido->font();
+    grande.setBold(true);
+    grande.setPointSizeF(grande.pointSizeF() * 1.15);
+    nombreElegido->setFont(grande);
+    tipoElegidoEtiqueta = new QLabel;
+    tipoElegidoEtiqueta->setAlignment(Qt::AlignCenter);
+    tipoElegidoEtiqueta->setWordWrap(true);
+    tipoElegidoEtiqueta->setStyleSheet(QStringLiteral("color:%1;").arg(c.texto2.name()));
+    estadoElegido = new QLabel;
+    estadoElegido->setAlignment(Qt::AlignCenter);
+    estadoElegido->setWordWrap(true);
+
+    botonIniciar = botonAccion(QStringLiteral("reproducir"), c.ok, tr("Iniciar"));
+    botonDetener = botonAccion(QStringLiteral("cerrar"), c.error, tr("Detener"));
+    botonReiniciar = botonAccion(QStringLiteral("repetir"), c.aviso, tr("Reiniciar"));
+    botonAdministrar = botonAccion(QStringLiteral("editar"), c.acento, tr("Administrar"));
+    botonAdministrar->setToolTip(tr("Consola, plugins o mods, jugadores, opciones y respaldos (o doble clic en el servidor)"));
+    botonCarpeta = botonAccion(QStringLiteral("carpeta"), c.aviso, tr("Carpeta"));
+    botonCambiarVersion = botonAccion(QStringLiteral("actualizar"), c.acento, tr("Cambiar versión…"));
+    botonRam = botonAccion(QStringLiteral("ajustes"), c.texto2, tr("Memoria…"));
+    botonReiniciarMundo = botonAccion(QStringLiteral("borrar"), c.error, tr("Reiniciar mundo…"));
+    accionesUno = new QWidget;
+    auto *capaUno = new QVBoxLayout(accionesUno);
+    capaUno->setContentsMargins(0, 0, 0, 0);
+    capaUno->setSpacing(1);
+    for (QPushButton *b : {botonIniciar, botonDetener, botonReiniciar})
+        capaUno->addWidget(b);
+    capaUno->addWidget(separador());
+    for (QPushButton *b : {botonAdministrar, botonCarpeta, botonCambiarVersion, botonRam, botonReiniciarMundo})
+        capaUno->addWidget(b);
+
+    // Varios elegidos (Ctrl/Shift): lo que se puede hacer a todos juntos
+    accionesVarios = new QWidget;
+    etiquetaVarios = new QLabel;
+    etiquetaVarios->setWordWrap(true);
+    botonInstalarVarios = botonAccion(QStringLiteral("agregar"), c.ok, tr("Instalar plugin o mod…"));
+    auto *botonPaperVarios = botonAccion(QStringLiteral("descargar"), c.acento, tr("Actualizar Paper"));
+    auto *capaVarios = new QVBoxLayout(accionesVarios);
+    capaVarios->setContentsMargins(0, 0, 0, 0);
+    capaVarios->addWidget(etiquetaVarios);
+    capaVarios->addWidget(separador());
+    capaVarios->addWidget(botonPaperVarios);
+    capaVarios->addWidget(botonInstalarVarios);
+
+    auto *capaPanel = new QVBoxLayout(panel);
+    capaPanel->setContentsMargins(8, 8, 4, 8);
+    capaPanel->addWidget(iconoElegido);
+    capaPanel->addWidget(nombreElegido);
+    capaPanel->addWidget(tipoElegidoEtiqueta);
+    capaPanel->addWidget(estadoElegido);
+    capaPanel->addSpacing(6);
+    capaPanel->addWidget(separador());
+    capaPanel->addWidget(accionesUno);
+    capaPanel->addWidget(accionesVarios);
+    capaPanel->addStretch();
+
+    auto *lineaVertical = new QFrame;
+    lineaVertical->setFrameShape(QFrame::VLine);
+    lineaVertical->setStyleSheet(QStringLiteral("color:%1;").arg(c.borde.name()));
+    auto *cuerpo = new QHBoxLayout;
+    cuerpo->setContentsMargins(0, 0, 0, 0);
+    cuerpo->addWidget(grilla, 1);
+    cuerpo->addWidget(lineaVertical);
+    cuerpo->addWidget(panel);
+    auto *capa = new QVBoxLayout(vista);
+    capa->setContentsMargins(0, 0, 0, 0);
+    capa->addLayout(barra);
+    capa->addWidget(separador());
+    capa->addLayout(cuerpo, 1);
+
+    connect(botonCrear, &QPushButton::clicked, this, &PaginaMinecraft::crearServidor);
+    connect(botonActualizarLista, &QPushButton::clicked, this, &PaginaMinecraft::consultar);
+    connect(botonPaper, &QPushButton::clicked, this, &PaginaMinecraft::actualizarPaper);
+    connect(botonPaperVarios, &QPushButton::clicked, this, &PaginaMinecraft::actualizarPaper);
+    connect(botonInstalarVarios, &QPushButton::clicked, this, [this] { instalarPlugin(true); });
+    connect(botonIniciar, &QPushButton::clicked, this, &PaginaMinecraft::iniciar);
+    connect(botonDetener, &QPushButton::clicked, this, &PaginaMinecraft::detener);
+    connect(botonReiniciar, &QPushButton::clicked, this, &PaginaMinecraft::reiniciar);
+    connect(botonAdministrar, &QPushButton::clicked, this, [this] { abrirServidor(servidorElegido()); });
+    connect(botonCarpeta, &QPushButton::clicked, this, &PaginaMinecraft::abrirCarpeta);
+    connect(botonCambiarVersion, &QPushButton::clicked, this, &PaginaMinecraft::cambiarVersion);
+    connect(botonRam, &QPushButton::clicked, this, &PaginaMinecraft::cambiarRam);
+    connect(botonReiniciarMundo, &QPushButton::clicked, this, &PaginaMinecraft::reiniciarMundo);
+    connect(grilla, &GrillaServidores::cambioSeleccion, this, [this] {
+        mostrarElegido();
+        actualizarPestanas();
+        if (servidorElegido() != pluginsDe)
+            consultarPlugins();
+        if (servidorElegido() != consolaDe)
+            verConsola();
+    });
+    connect(grilla, &GrillaServidores::abrir, this, &PaginaMinecraft::abrirServidor);
+    return vista;
+}
+
+// --- Vista «Servidor» (la ventana «Editar» de Prism) ----------------------------------------------------------
+
+QWidget *PaginaMinecraft::armarVistaServidor()
+{
+    const tema::Colores &c = tema::colores();
+    auto *vista = new QWidget;
+    auto *botonVolver = botonAccion(QStringLiteral("volver"), c.texto2, tr("Servidores"));
+    botonVolver->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+    iconoCabecera = new QLabel;
+    tituloServidor = new QLabel;
+    QFont grande = tituloServidor->font();
+    grande.setBold(true);
+    grande.setPointSizeF(grande.pointSizeF() * 1.15);
+    tituloServidor->setFont(grande);
+    estadoServidor = new QLabel;
+    auto *cabecera = new QHBoxLayout;
+    cabecera->addWidget(botonVolver);
+    cabecera->addSpacing(8);
+    cabecera->addWidget(iconoCabecera);
+    cabecera->addWidget(tituloServidor);
+    cabecera->addSpacing(10);
+    cabecera->addWidget(estadoServidor, 1);
+
+    // Páginas a la izquierda, con íconos de colores
+    listaPaginas = new QListWidget;
+    listaPaginas->setFixedWidth(180);
+    listaPaginas->setIconSize(QSize(24, 24));
+    listaPaginas->setFrameShape(QFrame::NoFrame);
+    listaPaginas->setStyleSheet(QStringLiteral("QListWidget { background: transparent; border: none; }"
+                                               "QListWidget::item { padding: 7px 6px; border-radius: 6px; }"));
+    const QList<QPair<QString, QPair<QString, QColor>>> lista = {
+        {tr("Consola"), {QStringLiteral("terminal"), c.texto2}}, {tr("Plugins"), {QStringLiteral("bloque"), c.error}},
+        {tr("Jugadores"), {QStringLiteral("cuenta"), c.acento}}, {tr("Opciones"), {QStringLiteral("ajustes"), c.aviso}},
+        {tr("Respaldos"), {QStringLiteral("respaldo"), c.ok}}};
+    for (const auto &p : lista)
+        new QListWidgetItem(tema::icono(p.second.first, p.second.second), p.first, listaPaginas);
+
+    tituloPagina = new QLabel;
+    QFont titulo = tituloPagina->font();
+    titulo.setBold(true);
+    titulo.setPointSizeF(titulo.pointSizeF() * 1.2);
+    tituloPagina->setFont(titulo);
+    paginas = new QStackedWidget;
+    paginas->addWidget(armarPaginaConsola());
+    paginas->addWidget(armarPaginaPlugins());
+    paginas->addWidget(pestanaJugadores);
+    paginas->addWidget(pestanaOpciones);
+    paginas->addWidget(pestanaRespaldos);
+    auto *derecha = new QVBoxLayout;
+    derecha->addWidget(tituloPagina);
+    derecha->addWidget(paginas, 1);
+
+    // Abajo, como «Lanzar / Terminar / Cerrar» de Prism
+    botonIniciar2 = botonAccion(QStringLiteral("reproducir"), c.ok, tr("Iniciar"));
+    botonDetener2 = botonAccion(QStringLiteral("cerrar"), c.error, tr("Detener"));
+    botonReiniciar2 = botonAccion(QStringLiteral("repetir"), c.aviso, tr("Reiniciar"));
+    auto *botonCerrar = new QPushButton(tr("Volver a los servidores"));
+    auto *pie = new QHBoxLayout;
+    pie->addStretch();
+    for (QPushButton *b : {botonIniciar2, botonDetener2, botonReiniciar2}) {
+        b->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+        pie->addWidget(b);
+    }
+    pie->addSpacing(12);
+    pie->addWidget(botonCerrar);
+    derecha->addLayout(pie);
+
+    auto *lineaVertical = new QFrame;
+    lineaVertical->setFrameShape(QFrame::VLine);
+    lineaVertical->setStyleSheet(QStringLiteral("color:%1;").arg(c.borde.name()));
+    auto *cuerpo = new QHBoxLayout;
+    cuerpo->addWidget(listaPaginas);
+    cuerpo->addWidget(lineaVertical);
+    cuerpo->addLayout(derecha, 1);
+    auto *capa = new QVBoxLayout(vista);
+    capa->setContentsMargins(0, 0, 0, 0);
+    capa->addLayout(cabecera);
+    capa->addWidget(separador());
+    capa->addLayout(cuerpo, 1);
+
+    connect(botonVolver, &QPushButton::clicked, this, &PaginaMinecraft::volverALista);
+    connect(botonCerrar, &QPushButton::clicked, this, &PaginaMinecraft::volverALista);
+    connect(botonIniciar2, &QPushButton::clicked, this, &PaginaMinecraft::iniciar);
+    connect(botonDetener2, &QPushButton::clicked, this, &PaginaMinecraft::detener);
+    connect(botonReiniciar2, &QPushButton::clicked, this, &PaginaMinecraft::reiniciar);
+    connect(listaPaginas, &QListWidget::currentRowChanged, this, [this](int fila) {
+        if (fila < 0)
+            return;
+        paginas->setCurrentIndex(fila);
+        tituloPagina->setText(listaPaginas->item(fila)->text());
+    });
+    listaPaginas->setCurrentRow(PaginaConsola);
+    return vista;
+}
+
+// Columna de acciones a la derecha de una tabla (como las páginas de Prism)
+static QVBoxLayout *columnaAcciones(QHBoxLayout *fila, QWidget *principal)
+{
+    auto *columna = new QVBoxLayout;
+    columna->setSpacing(1);
+    fila->addWidget(principal, 1);
+    auto *contenedor = new QWidget;
+    contenedor->setFixedWidth(210);
+    contenedor->setLayout(columna);
+    fila->addWidget(contenedor);
+    return columna;
+}
+
+QWidget *PaginaMinecraft::armarPaginaConsola()
+{
+    const tema::Colores &c = tema::colores();
+    auto *pagina = new QWidget;
+    etiquetaJugadores = new QLabel;
+    etiquetaJugadores->setWordWrap(true);
+    textoConsola = new QPlainTextEdit;
+    textoConsola->setReadOnly(true);
+    textoConsola->setFont(QFontDatabase::systemFont(QFontDatabase::FixedFont));
+    textoConsola->setMaximumBlockCount(5000);
+    editComando = new QLineEdit;
+    editComando->setPlaceholderText(tr("Comando (ej. say hola, time set day, list). Flechas: los anteriores"));
+    editComando->setProperty("ayuda", editComando->placeholderText());
+    editComando->installEventFilter(this);
+    botonEnviar = new QPushButton(tema::icono(QStringLiteral("siguiente")), tr("Enviar"));
+    botonTerminal = botonAccion(QStringLiteral("terminal"), c.texto2, tr("Abrir en una terminal"));
+    botonTerminal->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+    auto *arriba = new QHBoxLayout;
+    arriba->addWidget(etiquetaJugadores, 1);
+    arriba->addWidget(botonTerminal);
+    auto *abajo = new QHBoxLayout;
+    abajo->addWidget(editComando, 1);
+    abajo->addWidget(botonEnviar);
+    auto *capa = new QVBoxLayout(pagina);
+    capa->setContentsMargins(0, 0, 0, 0);
+    capa->addLayout(arriba);
+    capa->addWidget(textoConsola, 1);
+    capa->addLayout(abajo);
+    connect(botonEnviar, &QPushButton::clicked, this, &PaginaMinecraft::enviarComando);
+    connect(editComando, &QLineEdit::returnPressed, this, &PaginaMinecraft::enviarComando);
+    connect(botonTerminal, &QPushButton::clicked, this, &PaginaMinecraft::abrirTerminal);
+    return pagina;
+}
+
+QWidget *PaginaMinecraft::armarPaginaPlugins()
+{
+    const tema::Colores &c = tema::colores();
+    auto *pagina = new QWidget;
+    arbolPlugins = new QTreeWidget;
+    arbolPlugins->setRootIsDecorated(false);
+    arbolPlugins->setHeaderLabels({tr("Plugin"), tr("Versión"), tr("Nueva"), tr("Estado")});
+    arbolPlugins->header()->setSectionResizeMode(0, QHeaderView::Stretch);
+    for (int i = 1; i < 4; ++i)
+        arbolPlugins->header()->setSectionResizeMode(i, QHeaderView::ResizeToContents);
+    estadoPlugins = new QLabel;
+    estadoPlugins->setWordWrap(true);
+    auto *izquierda = new QWidget;
+    auto *capaIzq = new QVBoxLayout(izquierda);
+    capaIzq->setContentsMargins(0, 0, 0, 0);
+    capaIzq->addWidget(arbolPlugins, 1);
+    capaIzq->addWidget(estadoPlugins);
+    botonPlugin = botonAccion(QStringLiteral("agregar"), c.ok, tr("Instalar…"));
+    botonPlugin->setToolTip(tr("Un plugin (Paper) o mod (Fabric/Forge) de Modrinth por nombre o URL, con sus dependencias"));
+    botonBuscarPlugins = botonAccion(QStringLiteral("buscar"), c.acento, tr("Ver versiones"));
+    botonBuscarPlugins->setToolTip(tr("Consultar en Modrinth si hay versiones nuevas"));
+    botonActualizarPlugins = botonAccion(QStringLiteral("descargar"), c.acento, tr("Actualizar"));
+    botonActualizarPlugins->setToolTip(tr("Bajar las versiones nuevas (las anteriores quedan en Respaldos)"));
+    botonPack = botonAccion(QStringLiteral("paquete"), c.aviso, tr("Pack para jugadores…"));
+    botonPack->setToolTip(tr("Un .mrpack con los mods que necesitan los jugadores (se abre con Prism Launcher o la app de Modrinth)"));
+    botonCarpetaPlugins = botonAccion(QStringLiteral("carpeta"), c.aviso, tr("Ver carpeta"));
+    auto *fila = new QHBoxLayout(pagina);
+    fila->setContentsMargins(0, 0, 0, 0);
+    QVBoxLayout *columna = columnaAcciones(fila, izquierda);
+    columna->addWidget(botonPlugin);
+    columna->addWidget(separador());
+    columna->addWidget(botonBuscarPlugins);
+    columna->addWidget(botonActualizarPlugins);
+    columna->addWidget(separador());
+    columna->addWidget(botonPack);
+    columna->addStretch();
+    columna->addWidget(botonCarpetaPlugins);
+    connect(botonPlugin, &QPushButton::clicked, this, [this] { instalarPlugin(false); });
+    connect(botonBuscarPlugins, &QPushButton::clicked, this, &PaginaMinecraft::consultarPlugins);
+    connect(botonActualizarPlugins, &QPushButton::clicked, this, &PaginaMinecraft::actualizarPlugins);
+    connect(botonPack, &QPushButton::clicked, this, &PaginaMinecraft::packJugadores);
+    connect(botonCarpetaPlugins, &QPushButton::clicked, this, &PaginaMinecraft::abrirCarpeta);
+    return pagina;
+}
+
+void PaginaMinecraft::abrirServidor(const QString &ruta)
+{
+    if (ruta.isEmpty())
+        return;
+    if (grilla->elegido() != ruta)
+        grilla->elegir(ruta);
+    vistas->setCurrentIndex(1);
+    mostrarElegido();
+}
+
+void PaginaMinecraft::volverALista()
+{
+    vistas->setCurrentIndex(0);
+}
+
+// El elegido en todos lados: panel de la derecha, cabecera de la vista del servidor y resumen de abajo
+void PaginaMinecraft::mostrarElegido()
+{
+    const tema::Colores &c = tema::colores();
+    const QStringList seleccionados = grilla->seleccionados();
+    const ServidorMc *s = grilla->datos(servidorElegido());
+    const bool varios = seleccionados.size() > 1;
+    accionesUno->setVisible(s && !varios);
+    accionesVarios->setVisible(varios);
+    if (varios) {
+        iconoElegido->setPixmap(tema::pixmap(QStringLiteral("servidor"), 56, c.texto2));
+        nombreElegido->setText(tr("%1 servidores").arg(seleccionados.size()));
+        tipoElegidoEtiqueta->setText(QString());
+        estadoElegido->setText(QString());
+        etiquetaVarios->setText(etiquetas(seleccionados).join(u'\n'));
+    } else if (s) {
+        iconoElegido->setPixmap(iconoServidor(s->tipo, s->icono, s->encendido, 64));
+        nombreElegido->setText(s->nombre());
+        tipoElegidoEtiqueta->setText(QStringLiteral("%1 %2 · %3").arg(nombreTipo(s->tipo), s->version,
+                                                                       s->grupo().isEmpty() ? tr("sin grupo") : s->grupo()));
+        const QString estado = !s->encendido ? tr("Apagado")
+                               : s->apaga.isEmpty() ? tr("● Encendido")
+                                                    : tr("● Encendido · sin jugadores, se apaga en %1 min").arg(s->apaga);
+        tema::mostrarEstado(estadoElegido, estado, s->encendido ? tema::Estado::Ok : tema::Estado::Neutro);
+    } else {
+        iconoElegido->setPixmap(tema::pixmap(QStringLiteral("servidor"), 56, c.texto3));
+        nombreElegido->setText(tr("Ningún servidor elegido"));
+        tipoElegidoEtiqueta->setText(tr("Tocá uno de la lista (doble clic para administrarlo)."));
+        estadoElegido->setText(QString());
+    }
+    if (s) {
+        iconoCabecera->setPixmap(iconoServidor(s->tipo, s->icono, s->encendido, 32));
+        tituloServidor->setText(etiqueta(s->ruta));
+        tema::mostrarEstado(estadoServidor, QStringLiteral("%1 %2 · %3").arg(nombreTipo(s->tipo), s->version,
+                                                                               s->encendido ? tr("encendido") : tr("apagado")),
+                            s->encendido ? tema::Estado::Ok : tema::Estado::Neutro);
+        resumen->setText(tr("%1: %2 %3 · mundo %4 · usado %5 · hasta %6 de RAM")
+                             .arg(s->nombre(), nombreTipo(s->tipo), s->version, s->mundo, s->ultimo, s->ram));
+    } else {
+        resumen->setText(QString());
+        if (vistas->currentIndex() == 1)
+            volverALista();
+    }
+    actualizarBotones();
+}
+
+// --- Visibilidad --------------------------------------------------------------------------------------------
 
 // Cada vez que se abre la página se actualiza la lista (un servidor pudo prenderse o apagarse)
 void PaginaMinecraft::showEvent(QShowEvent *evento)
@@ -207,31 +579,31 @@ void PaginaMinecraft::hideEvent(QHideEvent *evento)
 
 bool PaginaMinecraft::eventFilter(QObject *objeto, QEvent *evento)
 {
-    if (objeto == ui->editComando && evento->type() == QEvent::KeyPress && !historial.isEmpty()) {
+    if (objeto == editComando && evento->type() == QEvent::KeyPress && !historial.isEmpty()) {
         const int tecla = static_cast<QKeyEvent *>(evento)->key();
         if (tecla == Qt::Key_Up || tecla == Qt::Key_Down) {
             posHistorial = qBound(0, posHistorial + (tecla == Qt::Key_Up ? -1 : 1), int(historial.size()));
-            ui->editComando->setText(posHistorial < historial.size() ? historial.at(posHistorial) : QString());
+            editComando->setText(posHistorial < historial.size() ? historial.at(posHistorial) : QString());
             return true;
         }
     }
     return QWidget::eventFilter(objeto, evento);
 }
 
-// --- Consola -----------------------------------------------------------------------------------
+// --- Consola -------------------------------------------------------------------------------------------------
 
 void PaginaMinecraft::verConsola()
 {
     registro.cancelarYEsperar();
-    ui->textoConsola->clear();
+    textoConsola->clear();
     consola = Consola::Nada;
     jugadoresConectados = 0;
     consolaDe = servidorElegido(&consolaEncendido);
     if (consolaDe.isEmpty()) {
-        ui->etiquetaJugadores->setText(tr("Elegí un servidor para ver su consola."));
+        etiquetaJugadores->setText(tr("Elegí un servidor para ver su consola."));
     } else if (isVisible()) {
-        ui->etiquetaJugadores->setText(consolaEncendido ? tr("Consultando quién está conectado…")
-                                                        : tr("%1 está apagado: se ve lo último que registró.").arg(etiqueta(consolaDe)));
+        etiquetaJugadores->setText(consolaEncendido ? tr("Consultando quién está conectado…")
+                                                    : tr("%1 está apagado: se ve lo último que registró.").arg(etiqueta(consolaDe)));
         registro.iniciar(script, {QStringLiteral("registro"), consolaDe});
         consultarJugadores();
     }
@@ -241,9 +613,9 @@ void PaginaMinecraft::verConsola()
 void PaginaMinecraft::eventoRegistro(const QString &palabra, const QString &resto)
 {
     if (palabra == u"LINEA") {
-        QScrollBar *barra = ui->textoConsola->verticalScrollBar();
+        QScrollBar *barra = textoConsola->verticalScrollBar();
         const bool alFinal = barra->value() >= barra->maximum() - 4;    // si subió a leer, no se lo mueve
-        ui->textoConsola->appendPlainText(resto);
+        textoConsola->appendPlainText(resto);
         if (alFinal)
             barra->setValue(barra->maximum());
     } else if (palabra == u"CONSOLA") {
@@ -263,7 +635,7 @@ void PaginaMinecraft::consultarJugadores()
 void PaginaMinecraft::eventoJugadores(const QString &palabra, const QString &resto)
 {
     if (palabra == u"AVISO") {
-        ui->etiquetaJugadores->setText(resto);
+        etiquetaJugadores->setText(resto);
         return;
     }
     if (palabra != u"JUGADORES")
@@ -275,24 +647,24 @@ void PaginaMinecraft::eventoJugadores(const QString &palabra, const QString &res
     jugadoresConectados = c.at(0).toInt();
     const QStringList nombres = c.at(2).split(u',', Qt::SkipEmptyParts);
     if (jugadoresConectados == 0) {
-        ui->etiquetaJugadores->setText(tr("Nadie conectado (entran hasta %1).").arg(c.at(1)));
+        etiquetaJugadores->setText(tr("Nadie conectado (entran hasta %1).").arg(c.at(1)));
         return;
     }
     QString lista = nombres.join(QStringLiteral(", "));
     if (nombres.size() < jugadoresConectados)
         lista += (lista.isEmpty() ? QString() : QStringLiteral(" ")) + tr("y %1 más").arg(jugadoresConectados - nombres.size());
-    ui->etiquetaJugadores->setText(tr("Conectados (%1 de %2): %3").arg(jugadoresConectados).arg(c.at(1), lista));
+    etiquetaJugadores->setText(tr("Conectados (%1 de %2): %3").arg(jugadoresConectados).arg(c.at(1), lista));
 }
 
 void PaginaMinecraft::enviarComando()
 {
-    const QString texto = ui->editComando->text().trimmed();
+    const QString texto = editComando->text().trimmed();
     if (texto.isEmpty() || envio.ocupado() || consola != Consola::Comandos)
         return;
     if (historial.isEmpty() || historial.constLast() != texto)
         historial << texto;
     posHistorial = historial.size();
-    ui->editComando->clear();
+    editComando->clear();
     envio.iniciar(script, {QStringLiteral("comando"), consolaDe, texto});
     actualizarBotones();
 }
@@ -305,12 +677,13 @@ void PaginaMinecraft::abrirTerminal()
     actualizarBotones();
 }
 
+// --- Lista de servidores -------------------------------------------------------------------------------------
+
 void PaginaMinecraft::consultar()
 {
     if (consulta.ocupado())
         return;
-    const QSignalBlocker bloqueo(ui->arbolServidores);
-    ui->arbolServidores->clear();
+    grilla->empezar();
     paso = Paso::Servidores;
     consulta.iniciar(script, {QStringLiteral("servidores")});
 }
@@ -318,57 +691,31 @@ void PaginaMinecraft::consultar()
 void PaginaMinecraft::eventoConsulta(const QString &palabra, const QString &resto)
 {
     if (palabra == u"SERVIDOR") {
-        // SERVIDOR estado<tab>nombre<tab>tipo<tab>versión<tab>tamaño<tab>último uso<tab>RAM<tab>jar
+        // SERVIDOR estado<tab>nombre<tab>tipo<tab>versión<tab>tamaño<tab>último uso<tab>RAM<tab>jar[<tab>se apaga en<tab>ícono]
         const QStringList c = resto.split(u'\t');
         if (c.size() < 8)
             return;
-        const bool encendido = c.at(0) == u"ENCENDIDO";
-        const QString &nombre = c.at(1);
-        QString ultimo = c.at(5);
-        const QDate fecha = QDate::fromString(ultimo, Qt::ISODate);
+        ServidorMc s;
+        s.encendido = c.at(0) == u"ENCENDIDO";
+        s.ruta = c.at(1);
+        s.tipo = c.at(2);
+        s.version = c.at(3);
+        s.mundo = c.at(4);
+        s.ultimo = c.at(5);
+        const QDate fecha = QDate::fromString(s.ultimo, Qt::ISODate);
         if (fecha.isValid())
-            ultimo = fecha == QDate::currentDate() ? tr("hoy") : QLocale().toString(fecha, QLocale::ShortFormat);
-
-        const QSignalBlocker bloqueo(ui->arbolServidores);
-        QTreeWidgetItem *grupo = filaGrupo(nombre.contains(u'/') ? nombre.section(u'/', 0, 0) : QString());
-        auto *item = grupo ? new QTreeWidgetItem(grupo) : new QTreeWidgetItem(ui->arbolServidores);
-        if (grupo && encendido)
-            grupo->setIcon(0, tema::icono(QStringLiteral("punto"), tema::colores().ok));
-        // Cerrados salvo que el usuario lo haya abierto, o que tenga uno encendido o el elegido
-        if (grupo && !gruposAbiertos.contains(grupo->text(0)) && (encendido || nombre == elegido))
-            grupo->setExpanded(true);
-        // (noveno campo, desde la 4.15.0: en cuántos minutos se apaga solo por no tener jugadores)
-        const QString apaga = c.size() > 8 ? c.at(8) : QString();
-        item->setText(0, nombre.section(u'/', -1)
-                             + (!encendido ? QString() : apaga.isEmpty() ? tr("  (encendido)")
-                                : tr("  (encendido · sin jugadores, se apaga en %1 min)").arg(apaga)));
-        item->setIcon(0, tema::icono(QStringLiteral("punto"), encendido ? tema::colores().ok : tema::colores().texto3));
-        item->setText(1, nombreTipo(c.at(2)) + u' ' + c.at(3));
-        item->setText(2, c.at(4));
-        item->setText(3, ultimo);
-        item->setText(4, c.at(6));
-        item->setToolTip(0, tr("%1\nArranca con %2").arg(nombre, c.at(7)));
-        item->setData(0, RolNombre, nombre);
-        item->setData(0, RolEncendido, encendido);
-        item->setData(0, RolRam, c.at(6));
-        item->setData(0, RolTipo, c.at(2));
-        item->setData(0, RolVersion, c.at(3));
-        item->setFlags(item->flags() | Qt::ItemIsUserCheckable);
-        item->setCheckState(0, marcados.contains(nombre) ? Qt::Checked : Qt::Unchecked);
-        if (grupo) {
-            int prendidos = 0;
-            for (int i = 0; i < grupo->childCount(); ++i)
-                prendidos += grupo->child(i)->data(0, RolEncendido).toBool() ? 1 : 0;
-            const int total = grupo->childCount();
-            grupo->setText(1, (total == 1 ? tr("1 servidor") : tr("%1 servidores").arg(total))
-                                  + (prendidos == 0 ? QString()
-                                     : prendidos == 1 ? tr(" · 1 encendido") : tr(" · %1 encendidos").arg(prendidos)));
-            grupo->setForeground(1, prendidos > 0 ? tema::colores().ok : tema::colores().texto3);
-        }
-        if (nombre == elegido)
-            ui->arbolServidores->setCurrentItem(item);
+            s.ultimo = fecha == QDate::currentDate() ? tr("hoy") : QLocale().toString(fecha, QLocale::ShortFormat);
+        else if (s.ultimo == u"-")
+            s.ultimo = tr("nunca");
+        s.ram = c.at(6);
+        s.jar = c.at(7);
+        s.apaga = c.value(8);
+        s.icono = c.value(9);
+        grilla->agregar(s);
     } else if (palabra == u"INSTANCIA") {
-        ui->comboInstancia->addItem(resto);
+        menuJugar->addAction(tema::icono(QStringLiteral("juego")), resto, this, [this, resto] {
+            ejecutar({QStringLiteral("prism"), resto}, tr("Abriendo %1 en Prism Launcher…").arg(resto));
+        });
     }
 }
 
@@ -376,12 +723,16 @@ void PaginaMinecraft::eventoConsulta(const QString &palabra, const QString &rest
 // programa está abierto)
 void PaginaMinecraft::terminoConsulta()
 {
-    // Si el elegido se prendió o se apagó, la consola vuelve a empezar (cambia si acepta comandos)
-    if (paso == Paso::Servidores && isVisible()) {
-        bool encendido = false;
-        const QString servidor = servidorElegido(&encendido);
-        if (servidor != consolaDe || encendido != consolaEncendido)
-            verConsola();
+    if (paso == Paso::Servidores) {
+        grilla->terminar();
+        mostrarElegido();
+        // Si el elegido se prendió o se apagó, la consola vuelve a empezar (cambia si acepta comandos)
+        if (isVisible()) {
+            bool encendido = false;
+            const QString servidor = servidorElegido(&encendido);
+            if (servidor != consolaDe || encendido != consolaEncendido)
+                verConsola();
+        }
     }
     if (paso == Paso::Servidores && primeraVez) {
         paso = Paso::Instancias;
@@ -393,24 +744,44 @@ void PaginaMinecraft::terminoConsulta()
     actualizarBotones();
 }
 
+QString PaginaMinecraft::servidorElegido(bool *encendido) const
+{
+    const QString ruta = grilla->elegido();
+    if (encendido) {
+        const ServidorMc *s = grilla->datos(ruta);
+        *encendido = s && s->encendido;
+    }
+    return ruta;
+}
+
+QString PaginaMinecraft::tipoElegido() const
+{
+    const ServidorMc *s = grilla->datos(grilla->elegido());
+    return s ? s->tipo : QString();
+}
+
+// --- Plugins / mods ------------------------------------------------------------------------------------------
+
 void PaginaMinecraft::consultarPlugins()
 {
     plugins.cancelarYEsperar();
-    ui->arbolPlugins->clear();
+    arbolPlugins->clear();
     pluginsNuevos = 0;
     pluginsDe = servidorElegido();
-    const QTreeWidgetItem *actual = ui->arbolServidores->currentItem();
-    const QString tipo = actual ? actual->data(0, RolTipo).toString() : QString();
+    const QString tipo = tipoElegido();
     pluginsSonMods = tipo == u"fabric" || tipo == u"forge";
-    ui->arbolPlugins->setHeaderLabels({pluginsSonMods ? tr("Mod") : tr("Plugin"), tr("Versión"), tr("Nueva"), tr("Estado")});
-    ui->pestanasServidor->setTabText(ui->pestanasServidor->indexOf(ui->pestanaPlugins), pluginsSonMods ? tr("Mods") : tr("Plugins"));
-    if (pluginsDe.isEmpty()) {
-        ui->grupoPlugins->setTitle(tr("Plugins o mods del servidor elegido (se reconocen en Modrinth)"));
+    const QString clase = pluginsSonMods ? tr("Mods") : tr("Plugins");
+    arbolPlugins->setHeaderLabels({pluginsSonMods ? tr("Mod") : tr("Plugin"), tr("Versión"), tr("Nueva"), tr("Estado")});
+    listaPaginas->item(PaginaPlugins)->setText(clase);
+    listaPaginas->item(PaginaPlugins)->setHidden(tipo == u"vanilla");
+    if (paginas->currentIndex() == PaginaPlugins)
+        tituloPagina->setText(clase);
+    if (pluginsDe.isEmpty() || tipo == u"vanilla") {
+        tema::mostrarEstado(estadoPlugins, tipo == u"vanilla" ? tr("Vanilla no usa plugins ni mods.") : QString());
         actualizarBotones();
         return;
     }
-    ui->grupoPlugins->setTitle((pluginsSonMods ? tr("Mods de %1: consultando Modrinth…") : tr("Plugins de %1: consultando Modrinth…"))
-                                   .arg(etiqueta(pluginsDe)));
+    tema::mostrarEstado(estadoPlugins, tr("Consultando Modrinth…"));
     plugins.iniciar(script, {QStringLiteral("plugins"), pluginsDe});
     actualizarBotones();
 }
@@ -423,7 +794,7 @@ void PaginaMinecraft::eventoPlugins(const QString &palabra, const QString &resto
     const QStringList c = resto.split(u'\t');
     if (c.size() < 5)
         return;
-    auto *item = new QTreeWidgetItem(ui->arbolPlugins);
+    auto *item = new QTreeWidgetItem(arbolPlugins);
     item->setText(0, c.at(1));
     item->setToolTip(0, c.at(0));
     item->setText(1, c.at(2));
@@ -443,81 +814,46 @@ void PaginaMinecraft::eventoPlugins(const QString &palabra, const QString &resto
     }
 }
 
-// Fila del grupo (la primera carpeta de la ruta), creada la primera vez; sin grupo, nullptr
-QTreeWidgetItem *PaginaMinecraft::filaGrupo(const QString &grupo)
-{
-    if (grupo.isEmpty())
-        return nullptr;
-    for (int i = 0; i < ui->arbolServidores->topLevelItemCount(); ++i) {
-        QTreeWidgetItem *fila = ui->arbolServidores->topLevelItem(i);
-        if (fila->data(0, RolNombre).toString().isEmpty() && fila->text(0) == grupo)
-            return fila;
-    }
-    auto *fila = new QTreeWidgetItem(ui->arbolServidores);
-    fila->setText(0, grupo);
-    QFont negrita = fila->font(0);
-    negrita.setBold(true);
-    fila->setFont(0, negrita);
-    fila->setIcon(0, tema::icono(QStringLiteral("punto"), tema::colores().texto3));
-    fila->setToolTip(0, tr("Marcar el grupo marca todos sus servidores"));
-    // No se elige (no es un servidor), pero se puede marcar entero
-    fila->setFlags(Qt::ItemIsEnabled | Qt::ItemIsUserCheckable | Qt::ItemIsAutoTristate);
-    fila->setCheckState(0, Qt::Unchecked);
-    fila->setExpanded(gruposAbiertos.value(grupo, false));
-    return fila;
-}
-
-QString PaginaMinecraft::servidorElegido(bool *encendido) const
-{
-    const QTreeWidgetItem *item = ui->arbolServidores->currentItem();
-    if (encendido)
-        *encendido = item && item->data(0, RolEncendido).toBool();
-    return item ? item->data(0, RolNombre).toString() : QString();
-}
-
-QStringList PaginaMinecraft::servidoresMarcados() const
-{
-    QStringList lista;
-    for (QTreeWidgetItemIterator it(ui->arbolServidores); *it; ++it) {
-        const QString nombre = (*it)->data(0, RolNombre).toString();
-        if (!nombre.isEmpty() && (*it)->checkState(0) == Qt::Checked)
-            lista << nombre;
-    }
-    return lista;
-}
+// --- Botones -------------------------------------------------------------------------------------------------
 
 void PaginaMinecraft::actualizarBotones()
 {
     bool encendido = false;
     const bool hay = !servidorElegido(&encendido).isEmpty();
     const bool libre = !accion.ocupado();
-    ui->botonIniciar->setEnabled(libre && hay && !encendido);
-    ui->botonDetener->setEnabled(libre && hay && encendido);
-    ui->botonReiniciar->setEnabled(libre && hay && encendido);
-    ui->botonPaper->setEnabled(libre);
-    ui->botonRam->setEnabled(libre && hay);
-    ui->botonReiniciarMundo->setEnabled(libre && hay && !encendido);
-    ui->botonCarpeta->setEnabled(hay);
-    ui->botonBuscarPlugins->setEnabled(libre && hay && !plugins.ocupado());
-    ui->botonActualizarPlugins->setEnabled(libre && hay && !encendido && !plugins.ocupado() && pluginsNuevos > 0
-                                           && pluginsDe == servidorElegido());
-    ui->botonPlugin->setEnabled(libre);
-    ui->botonCrear->setEnabled(libre);
+    for (QPushButton *b : {botonIniciar, botonIniciar2})
+        b->setEnabled(libre && hay && !encendido);
+    for (QPushButton *b : {botonDetener, botonDetener2, botonReiniciar, botonReiniciar2})
+        b->setEnabled(libre && hay && encendido);
+    botonPaper->setEnabled(libre && hay);
+    botonCrear->setEnabled(libre);
+    botonJugar->setEnabled(libre && !menuJugar->isEmpty());
+    botonCarpetas->setEnabled(libre);
+    botonAdministrar->setEnabled(hay);
+    botonCarpeta->setEnabled(hay);
+    botonRam->setEnabled(libre && hay);
+    botonReiniciarMundo->setEnabled(libre && hay && !encendido);
     botonCambiarVersion->setEnabled(libre && hay && !encendido);
     botonCambiarVersion->setToolTip(encendido ? tr("Detenelo antes de cambiar la versión")
                                               : tr("Otro software o versión (o actualizar el cargador de Fabric/Forge), guardando el mundo antes"));
+    botonReiniciarMundo->setToolTip(encendido ? tr("Detenelo antes de reiniciar el mundo") : QString());
+    botonInstalarVarios->setEnabled(libre);
+    botonBuscarPlugins->setEnabled(libre && hay && !plugins.ocupado());
+    botonActualizarPlugins->setEnabled(libre && hay && !encendido && !plugins.ocupado() && pluginsNuevos > 0
+                                       && pluginsDe == servidorElegido());
+    botonPlugin->setEnabled(libre && hay);
     botonPack->setVisible(pluginsSonMods);
     botonPack->setEnabled(libre && hay);
+    botonCarpetaPlugins->setEnabled(hay);
     for (PestanaServidor *p : pestanas())
         p->ponerOcupado(!libre);
-    ui->grupoPrism->setEnabled(libre && ui->comboInstancia->count() > 0);
 
     const bool comandos = consola == Consola::Comandos;
-    ui->editComando->setEnabled(comandos);
-    ui->botonEnviar->setEnabled(comandos && !envio.ocupado());
-    ui->botonTerminal->setEnabled(comandos && !envio.ocupado());
-    ui->editComando->setPlaceholderText(
-        comandos ? ui->editComando->property("ayuda").toString()
+    editComando->setEnabled(comandos);
+    botonEnviar->setEnabled(comandos && !envio.ocupado());
+    botonTerminal->setEnabled(comandos && !envio.ocupado());
+    editComando->setPlaceholderText(
+        comandos ? editComando->property("ayuda").toString()
         : consola == Consola::SoloLectura ? tr("Se prendió sin consola compartida: reinicialo desde el panel para mandarle comandos")
         : consola == Consola::Apagado ? tr("Apagado: no recibe comandos")
         : QString());
@@ -526,11 +862,11 @@ void PaginaMinecraft::actualizarBotones()
 void PaginaMinecraft::ejecutar(const QStringList &argumentos, const QString &estado, const QByteArray &entrada)
 {
     mensajeFinal.clear();
-    tema::mostrarEstado(ui->etiquetaEstado, estado);
-    ui->barraProgreso->setRange(0, 0);    // sin porcentaje: barra «ocupada»
-    ui->barraProgreso->show();
+    tema::mostrarEstado(etiquetaEstado, estado);
+    barraProgreso->setRange(0, 0);    // sin porcentaje: barra «ocupada»
+    barraProgreso->show();
     accion.iniciar(script, argumentos, entrada);
-    ui->botonCancelar->setVisible(cancelable || creando);
+    botonCancelar->setVisible(cancelable || creando);
     actualizarBotones();
 }
 
@@ -583,16 +919,14 @@ void PaginaMinecraft::detenerOReiniciar(bool reinicio)
 
 void PaginaMinecraft::actualizarPaper()
 {
-    QStringList servidores = servidoresMarcados();
-    if (servidores.isEmpty() && !servidorElegido().isEmpty())
-        servidores << servidorElegido();
+    QStringList servidores = grilla->seleccionados();
     if (servidores.isEmpty()) {
-        tema::mostrarEstado(ui->etiquetaEstado, tr("Marcá (o elegí) al menos un servidor."));
+        tema::mostrarEstado(etiquetaEstado, tr("Elegí al menos un servidor (con Ctrl o Shift se eligen varios)."));
         return;
     }
     if (QMessageBox::question(this, windowTitle(),
             tr("Se va a bajar la última compilación estable de Paper (de la misma versión de Minecraft) para:\n\n%1\n\n"
-               "Los encendidos no se tocan y el jar anterior queda en Respaldos. ¿Continuar?")
+               "Los que no son Paper o están encendidos no se tocan, y el jar anterior queda en Respaldos. ¿Continuar?")
                 .arg(etiquetas(servidores).join(QStringLiteral("\n")))) != QMessageBox::Yes)
         return;
     recargarPlugins = false;
@@ -602,15 +936,15 @@ void PaginaMinecraft::actualizarPaper()
 void PaginaMinecraft::cambiarRam()
 {
     const QString servidor = servidorElegido();
-    const QTreeWidgetItem *item = ui->arbolServidores->currentItem();
-    const QString actual = item ? item->data(0, RolRam).toString() : QStringLiteral("8G");
+    const ServidorMc *s = grilla->datos(servidor);
+    const QString actual = s ? s->ram : QStringLiteral("8G");
     bool ok = false;
     const int gb = QInputDialog::getInt(this, windowTitle(),
         tr("Memoria máxima para %1 (GB):").arg(etiqueta(servidor)),
         QString(actual).remove(QRegularExpression(QStringLiteral("[^0-9]"))).toInt(), 1, 24, 1, &ok);
     if (!ok)
         return;
-    ejecutar({QStringLiteral("ram"), servidor, QString::number(gb) + u'G'}, tr("Cambiando la RAM…"));
+    ejecutar({QStringLiteral("ram"), servidor, QString::number(gb) + u'G'}, tr("Cambiando la memoria…"));
 }
 
 void PaginaMinecraft::reiniciarMundo()
@@ -643,71 +977,66 @@ void PaginaMinecraft::actualizarPlugins()
              (pluginsSonMods ? tr("Actualizando mods de %1…") : tr("Actualizando plugins de %1…")).arg(etiqueta(servidor)));
 }
 
-void PaginaMinecraft::instalarPlugin()
+// Un plugin o mod de Modrinth (o una URL): en el elegido, o en todos los elegidos (cada uno recibe el que le sirve)
+void PaginaMinecraft::instalarPlugin(bool enSeleccionados)
 {
-    const QString texto = ui->editPlugin->text().trimmed();
-    if (texto.isEmpty()) {
-        tema::mostrarEstado(ui->etiquetaEstado, tr("Escribí el nombre del plugin o mod en Modrinth (o pegá su URL)."));
+    const QStringList servidores = enSeleccionados ? grilla->seleccionados() : QStringList{servidorElegido()};
+    if (servidores.isEmpty() || servidores.first().isEmpty())
         return;
-    }
-    QStringList servidores = servidoresMarcados();
-    if (servidores.isEmpty() && !servidorElegido().isEmpty())
-        servidores << servidorElegido();
-    if (servidores.isEmpty()) {
-        tema::mostrarEstado(ui->etiquetaEstado, tr("Marcá (o elegí) al menos un servidor."));
+    bool ok = false;
+    const QString texto = QInputDialog::getText(this, tr("Instalar un plugin o mod"),
+        tr("Nombre en Modrinth (ej. Chunky) o su URL.\nSe instala en: %1\n(cada servidor recibe la versión que le sirve, "
+           "con sus dependencias)").arg(etiquetas(servidores).join(QStringLiteral(", "))),
+        QLineEdit::Normal, QString(), &ok).trimmed();
+    if (!ok || texto.isEmpty())
         return;
-    }
     recargarPlugins = true;
     ejecutar(QStringList{QStringLiteral("plugin"), texto} + servidores, tr("Instalando «%1»…").arg(texto));
 }
 
-void PaginaMinecraft::jugar()
-{
-    ejecutar({QStringLiteral("prism"), ui->comboInstancia->currentText()}, tr("Abriendo Prism Launcher…"));
-}
+// --- Resultado de las acciones -------------------------------------------------------------------------------
 
 void PaginaMinecraft::eventoAccion(const QString &palabra, const QString &resto)
 {
     if (palabra == u"ETAPA") {
-        tema::mostrarEstado(ui->etiquetaEstado, resto + QStringLiteral("…"));
+        tema::mostrarEstado(etiquetaEstado, resto + QStringLiteral("…"));
     } else if (palabra == u"ESPERA") {
         // Detener: hasta 2 minutos guardando mundos
-        ui->barraProgreso->setRange(0, 120);
-        ui->barraProgreso->setValue(resto.toInt());
+        barraProgreso->setRange(0, 120);
+        barraProgreso->setValue(resto.toInt());
     } else if (palabra == u"LISTO" || palabra == u"ERROR") {
         mensajeFinal = resto;
     } else if (palabra == u"AVISO") {
-        ui->registro->appendPlainText(resto);
+        registroAvisos->appendPlainText(resto);
+        if (!registroAvisos->isVisible())
+            botonAvisos->setText(tr("Avisos (%1)").arg(++avisosSinVer));
     } else if (palabra == u"CREADO") {
-        // El servidor nuevo queda elegido y con su grupo abierto
-        elegido = resto;
-        if (resto.contains(u'/'))
-            gruposAbiertos.insert(resto.section(u'/', 0, 0), true);
+        // El servidor nuevo (o movido de carpeta) queda elegido
+        grilla->elegir(resto);
     }
 }
 
 void PaginaMinecraft::terminoAccion(int codigo, bool cancelado)
 {
-    ui->barraProgreso->hide();
-    ui->botonCancelar->hide();
+    barraProgreso->hide();
+    botonCancelar->hide();
     if (cancelado && cancelable)
-        tema::mostrarEstado(ui->etiquetaEstado, tr("Cancelado: el servidor sigue prendido (se avisó en el chat)."));
+        tema::mostrarEstado(etiquetaEstado, tr("Cancelado: el servidor sigue prendido (se avisó en el chat)."));
     else if (cancelado && creando)
-        tema::mostrarEstado(ui->etiquetaEstado, tr("Cancelado: no se creó nada."));
+        tema::mostrarEstado(etiquetaEstado, tr("Cancelado: no se creó nada."));
     else if (cancelado)
-        tema::mostrarEstado(ui->etiquetaEstado, tr("Cancelado."));
+        tema::mostrarEstado(etiquetaEstado, tr("Cancelado."));
     else if (codigo == 0)
-        tema::mostrarEstado(ui->etiquetaEstado, mensajeFinal, tema::Estado::Ok);
+        tema::mostrarEstado(etiquetaEstado, mensajeFinal, tema::Estado::Ok);
     else
-        tema::mostrarEstado(ui->etiquetaEstado, (mensajeFinal.isEmpty() ? tr("No se pudo completar.") : mensajeFinal), tema::Estado::Error);
+        tema::mostrarEstado(etiquetaEstado, (mensajeFinal.isEmpty() ? tr("No se pudo completar.") : mensajeFinal), tema::Estado::Error);
     if (!mensajeFinal.isEmpty())
-        ui->registro->appendPlainText(mensajeFinal);
+        registroAvisos->appendPlainText(mensajeFinal);
     cancelable = false;
     creando = false;
     actualizarBotones();
     for (PestanaServidor *p : pestanas())
         p->refrescar();
-
     if (recargarPlugins) {
         recargarPlugins = false;
         consultarPlugins();
@@ -717,15 +1046,14 @@ void PaginaMinecraft::terminoAccion(int codigo, bool cancelado)
     QTimer::singleShot(8000, this, &PaginaMinecraft::consultar);
 }
 
+// --- Crear, cambiar versión, pack ------------------------------------------------------------------------------
+
 // Asistente para un servidor nuevo: arma la configuración y «Minecraft.sh crear» la usa (por stdin)
 void PaginaMinecraft::crearServidor()
 {
     QHash<QString, bool> existentes;
-    for (QTreeWidgetItemIterator it(ui->arbolServidores); *it; ++it) {
-        const QString nombre = (*it)->data(0, RolNombre).toString();
-        if (!nombre.isEmpty())
-            existentes.insert(nombre, (*it)->data(0, RolEncendido).toBool());
-    }
+    for (const ServidorMc &s : grilla->todos())
+        existentes.insert(s.ruta, s.encendido);
     AsistenteMinecraft asistente(script, existentes, this);
     if (asistente.exec() != QDialog::Accepted)
         return;
@@ -741,21 +1069,19 @@ QList<PestanaServidor *> PaginaMinecraft::pestanas() const
 // El servidor elegido, su estado y su tipo, para las pestañas (cada una vuelve a consultar si cambió)
 void PaginaMinecraft::actualizarPestanas()
 {
-    const QTreeWidgetItem *item = ui->arbolServidores->currentItem();
-    const QString servidor = servidorElegido();
-    const bool encendido = item && item->data(0, RolEncendido).toBool();
-    const QString tipo = item ? item->data(0, RolTipo).toString() : QString();
+    bool encendido = false;
+    const QString servidor = servidorElegido(&encendido);
     for (PestanaServidor *p : pestanas())
-        p->elegir(servidor, encendido, tipo);
+        p->elegir(servidor, encendido, tipoElegido());
 }
 
 void PaginaMinecraft::cambiarVersion()
 {
-    const QTreeWidgetItem *item = ui->arbolServidores->currentItem();
-    const QString servidor = servidorElegido();
-    if (!item || servidor.isEmpty())
+    const ServidorMc *s = grilla->datos(servidorElegido());
+    if (!s)
         return;
-    DialogoVersionMinecraft dialogo(script, servidor, item->data(0, RolTipo).toString(), item->data(0, RolVersion).toString(), this);
+    const QString servidor = s->ruta;
+    DialogoVersionMinecraft dialogo(script, servidor, s->tipo, s->version, this);
     if (dialogo.exec() != QDialog::Accepted)
         return;
     recargarPlugins = true;

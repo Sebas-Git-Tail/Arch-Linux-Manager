@@ -33,7 +33,8 @@ add_executable(Arch-Linux-Manager-Qt
     PaginaRespaldo.cpp PaginaRespaldo.h PaginaRespaldo.ui
     PaginaSteam.cpp PaginaSteam.h PaginaSteam.ui
     PaginaAndroid.cpp PaginaAndroid.h PaginaAndroid.ui
-    PaginaMinecraft.cpp PaginaMinecraft.h PaginaMinecraft.ui
+    PaginaMinecraft.cpp PaginaMinecraft.h
+    VistasMinecraft.cpp VistasMinecraft.h
     AsistenteMinecraft.cpp AsistenteMinecraft.h
     PestanasMinecraft.cpp PestanasMinecraft.h
     PaginaTutoriales.cpp PaginaTutoriales.h PaginaTutoriales.ui

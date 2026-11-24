@@ -19,6 +19,7 @@
 #      Minecraft.sh reiniciar-mundo SERVIDOR         guarda el mundo en Respaldos/ y lo borra (Paper hace uno nuevo)
 #      Minecraft.sh ram SERVIDOR 8G                  cambia la memoria máxima
 #      Minecraft.sh carpeta SERVIDOR                 abre la carpeta del servidor
+#      Minecraft.sh abrir-carpeta servidores|respaldos   abre la carpeta de todos los servidores o de los respaldos
 #      Minecraft.sh opciones                         (asistente) versiones, software de cada una, grupos y Javas instalados
 #      Minecraft.sh buscar-modrinth complemento|modpack TIPO VERSION TEXTO   (asistente) proyectos de Modrinth que sirven
 #      Minecraft.sh modpack-versiones SLUG           (asistente) versiones de un modpack que se pueden usar
@@ -53,7 +54,8 @@
 #   JUGADORES conectados<tab>máximo<tab>nombre,nombre…
 #   VERSION v<tab>software,…   GRUPO g   JAVA n   RESULTADO …   MODPACK …   (asistente, ver minecraft_api.py)
 #   CREADO <servidor>    (crear y cambiar: la ruta del servidor, que en cambiar puede ser otra)
-#   SERVIDOR … tiene un noveno campo desde la 4.15.0: en cuántos minutos se apaga solo (vacío si no está por apagarse)
+#   SERVIDOR … tiene un noveno campo desde la 4.15.0: en cuántos minutos se apaga solo (vacío si no está por apagarse),
+#   y un décimo desde la 4.16.0: la ruta de su server-icon.png (vacío si no tiene)
 #
 # Consola compartida (desde la 4.12.0): el servidor corre dentro de tmux (socket propio «minecraft»,
 # sesión «mc-<servidor>»), así sigue prendido aunque se cierre la terminal o el Manager, y el panel
@@ -318,8 +320,9 @@ servidores)
             apaga=$(( ($(cat "$marca" 2>/dev/null || echo 0) - $(date +%s) + 59) / 60 ))
             (( apaga >= 0 )) || apaga=0
         fi
-        printf 'SERVIDOR %s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$estado" "$servidor" "$CONF_TIPO" "$CONF_VERSION" \
-            "${tam:--}" "${ultimo:--}" "$CONF_RAM" "${CONF_JAR:-run.sh}" "$apaga"
+        icono=""; [[ -f "$carpeta/server-icon.png" ]] && icono="$carpeta/server-icon.png"
+        printf 'SERVIDOR %s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$estado" "$servidor" "$CONF_TIPO" "$CONF_VERSION" \
+            "${tam:--}" "${ultimo:--}" "$CONF_RAM" "${CONF_JAR:-run.sh}" "$apaga" "$icono"
     done < <(listar_servidores)
     ;;
 
@@ -1230,6 +1233,16 @@ vigilar)
     rm -f "$marca"
     [[ "$(cat "$pidf" 2>/dev/null)" == "$$" ]] && rm -f "$pidf"
     exit 0
+    ;;
+
+abrir-carpeta)
+    case "${2:-}" in
+        servidores) destino="$SERVIDORES_DIR" ;;
+        respaldos)  destino="$RESPALDOS_MC_DIR"; mkdir -p "$destino" ;;
+        *) error "Carpeta desconocida (servidores o respaldos)." 2 ;;
+    esac
+    setsid -f xdg-open "$destino" &>/dev/null
+    emitir "LISTO Abriendo la carpeta de ${2}."
     ;;
 
 carpeta)

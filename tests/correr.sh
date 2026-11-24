@@ -440,6 +440,8 @@ python3 -c 'import struct,sys,zlib; open(sys.argv[1],"wb").write(b"\x89PNG\r\n\x
 python3 -c 'import struct,sys; open(sys.argv[1],"wb").write(b"\x89PNG\r\n\x1a\n"+struct.pack(">I",13)+b"IHDR"+struct.pack(">II",128,128)+b"\x08\x06\x00\x00\x00")' "$TMP/i128.png"
 MC icono "Amigos/26.3/26.3 Nuevo" "$TMP/i64.png" > /dev/null && [[ -f "$P1/server-icon.png" ]] && ok "icono: copia un PNG de 64×64" || mal "icono"
 MC icono "Amigos/26.3/26.3 Nuevo" "$TMP/i128.png" > /dev/null; igual "icono: rechaza otro tamaño" "$?" "2"
+igual "servidores: décimo campo con la ruta del ícono" "$(MC servidores | grep $'\tAmigos/26.3/26.3 Nuevo\t' | cut -f10)" "$P1/server-icon.png"
+MC abrir-carpeta ../../etc > /dev/null; igual "abrir-carpeta: solo servidores o respaldos" "$?" "2"
 # Respaldos
 MC respaldo-guardar "Amigos/26.3/26.3 Nuevo" > /dev/null
 copia=$(ls "$MINECRAFT_DIR/Respaldos/Amigos/26.3/26.3 Nuevo/mundos/"*.tar.zst 2>/dev/null | head -1)

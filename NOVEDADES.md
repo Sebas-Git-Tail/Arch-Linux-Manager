@@ -3,6 +3,16 @@
 Lo que cambió en cada versión. El Manager lo muestra la primera vez que se abre una versión nueva y siempre
 desde el botón del regalito. Los cambios marcados [Sebastián] solo aparecen en sus equipos.
 
+## 4.16.0 (24/11/2026)
+- [Sebastián] Panel de Minecraft con el estilo de Prism Launcher: los servidores como mosaicos con su ícono
+  (el server-icon.png, o uno pixel-art según sea Vanilla, Paper, Fabric o Forge, con un punto verde si está
+  prendido), agrupados con encabezados plegables, y a la derecha el elegido con su columna de acciones.
+- [Sebastián] Doble clic (o «Administrar») abre el servidor como el «Editar» de Prism: páginas a la izquierda
+  (Consola, Plugins/Mods, Jugadores, Opciones, Respaldos) e Iniciar/Detener/Reiniciar abajo.
+- [Sebastián] Con Ctrl o Shift se eligen varios servidores para actualizar Paper o instalarles un plugin o mod.
+- [Sebastián] «Jugar» abre las instancias de Prism desde la barra de arriba; «Carpetas» abre la de los
+  servidores o la de los respaldos; los avisos quedan detrás del botón «Avisos».
+
 ## 4.15.0 (24/11/2026)
 - [Sebastián] Panel de Minecraft: apagado automático. Un servidor sin jugadores se apaga solo a los 10 minutos
   (se cambia o se desactiva en Opciones) y, si la PC se prendió por WOL y nadie la está usando, después se apaga

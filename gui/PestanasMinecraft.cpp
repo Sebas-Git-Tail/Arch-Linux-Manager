@@ -1,5 +1,6 @@
 #include "PestanasMinecraft.h"
 #include "Tema.h"
+#include "VistasMinecraft.h"
 
 #include <QApplication>
 #include <QCheckBox>
@@ -80,31 +81,40 @@ PestanaJugadores::PestanaJugadores(const QString &script_, QWidget *parent)
     lista->header()->setSectionResizeMode(0, QHeaderView::Stretch);
     for (int c = 1; c < 6; ++c)
         lista->header()->setSectionResizeMode(c, QHeaderView::ResizeToContents);
-    botonOp = new QPushButton(tr("Hacer op"));
-    botonBlanca = new QPushButton(tr("A la lista blanca"));
-    botonBan = new QPushButton(tr("Banear…"));
-    botonExpulsar = new QPushButton(tr("Expulsar…"));
-    tema::marcarPeligro(botonBan);
+    const tema::Colores &c = tema::colores();
+    botonOp = botonAccion(QStringLiteral("escudo"), c.aviso, tr("Hacer op"));
+    botonBlanca = botonAccion(QStringLiteral("listo"), c.ok, tr("A la lista blanca"));
+    botonBan = botonAccion(QStringLiteral("cerrar"), c.error, tr("Banear…"));
+    botonExpulsar = botonAccion(QStringLiteral("volver"), c.error, tr("Expulsar…"));
     editNombre = new QLineEdit;
-    editNombre->setPlaceholderText(tr("Otro jugador (nombre exacto de Minecraft)"));
+    editNombre->setPlaceholderText(tr("Otro jugador"));
+    editNombre->setToolTip(tr("Nombre exacto de Minecraft (los de Bedrock empiezan con «.»)"));
     editNombre->setMaxLength(17);
-    botonAgregarBlanca = new QPushButton(tema::icono(QStringLiteral("agregar")), tr("Lista blanca"));
-    botonAgregarOp = new QPushButton(tema::icono(QStringLiteral("agregar")), tr("Op"));
+    botonAgregarBlanca = botonAccion(QStringLiteral("agregar"), c.ok, tr("Lista blanca"));
+    botonAgregarBlanca->setToolTip(tr("Agregar ese jugador a la lista blanca"));
+    botonAgregarOp = botonAccion(QStringLiteral("agregar"), c.aviso, tr("Op"));
+    botonAgregarOp->setToolTip(tr("Hacer op a ese jugador"));
 
-    auto *filaBotones = new QHBoxLayout;
+    // Como las páginas de Prism: la tabla a la izquierda y las acciones en columna a la derecha
+    auto *izquierda = new QVBoxLayout;
+    izquierda->addWidget(estado);
+    izquierda->addWidget(checkBlanca);
+    izquierda->addWidget(lista, 1);
+    auto *columna = new QVBoxLayout;
+    columna->setSpacing(1);
     for (QPushButton *b : {botonOp, botonBlanca, botonBan, botonExpulsar})
-        filaBotones->addWidget(b);
-    filaBotones->addStretch();
-    auto *filaAgregar = new QHBoxLayout;
-    filaAgregar->addWidget(editNombre, 1);
-    filaAgregar->addWidget(botonAgregarBlanca);
-    filaAgregar->addWidget(botonAgregarOp);
-    auto *capa = new QVBoxLayout(this);
-    capa->addWidget(estado);
-    capa->addWidget(checkBlanca);
-    capa->addWidget(lista, 1);
-    capa->addLayout(filaBotones);
-    capa->addLayout(filaAgregar);
+        columna->addWidget(b);
+    columna->addStretch();
+    columna->addWidget(editNombre);
+    columna->addWidget(botonAgregarBlanca);
+    columna->addWidget(botonAgregarOp);
+    auto *contenedor = new QWidget;
+    contenedor->setFixedWidth(210);
+    contenedor->setLayout(columna);
+    auto *capa = new QHBoxLayout(this);
+    capa->setContentsMargins(0, 0, 0, 0);
+    capa->addLayout(izquierda, 1);
+    capa->addWidget(contenedor);
 
     connect(&consulta, &ProcesoLogica::evento, this, &PestanaJugadores::evento);
     connect(&consulta, &ProcesoLogica::terminado, this, [this] { actualizarBotones(); });
@@ -310,6 +320,7 @@ PestanaOpciones::PestanaOpciones(const QString &script_, QWidget *parent)
     vistaMotd = new QLabel;
     vistaMotd->setTextFormat(Qt::RichText);
     vistaMotd->setMinimumHeight(48);
+    vistaMotd->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
     vistaMotd->setStyleSheet(QStringLiteral("background:#1f1f1f; border-radius:6px; padding:6px 10px; font-family:monospace;"));
     auto *paleta = new QGridLayout;
     int n = 0;
@@ -324,7 +335,8 @@ PestanaOpciones::PestanaOpciones(const QString &script_, QWidget *parent)
             QLineEdit *linea = motd2->hasFocus() ? motd2 : motd1;
             linea->insert(codigo);
         });
-        paleta->addWidget(b, 0, n++);
+        paleta->addWidget(b, n / 8, n % 8);
+        ++n;
     }
     const QList<QPair<QString, QString>> formatos = {{QStringLiteral("l"), tr("N")}, {QStringLiteral("o"), tr("C")},
                                                      {QStringLiteral("n"), tr("S")}, {QStringLiteral("r"), tr("Normal")}};
@@ -335,9 +347,9 @@ PestanaOpciones::PestanaOpciones(const QString &script_, QWidget *parent)
         b->setToolTip(ayudas.at(i));
         const QString codigo = QStringLiteral("§") + formatos.at(i).first;
         connect(b, &QPushButton::clicked, this, [this, codigo] { (motd2->hasFocus() ? motd2 : motd1)->insert(codigo); });
-        paleta->addWidget(b, 0, n++);
+        paleta->addWidget(b, i / 2, 8 + i % 2);
     }
-    paleta->setColumnStretch(n, 1);
+    paleta->setColumnStretch(10, 1);
     auto *capaMotd = new QVBoxLayout(cajaMotd);
     capaMotd->addWidget(motd1);
     capaMotd->addWidget(motd2);
@@ -350,31 +362,36 @@ PestanaOpciones::PestanaOpciones(const QString &script_, QWidget *parent)
     spinVacio->setRange(0, 720);
     spinVacio->setSuffix(tr(" min sin jugadores"));
     spinVacio->setSpecialValueText(tr("Nunca"));
-    checkApagarPc = new QCheckBox(tr("Después, apagar también la PC (solo si se prendió por WOL y nadie la está usando)"));
+    checkApagarPc = new QCheckBox(tr("Después, apagar también la PC"));
+    checkApagarPc->setToolTip(tr("Solo si la PC se prendió por WOL (desde el celular o Claude) y nadie la está usando"));
     auto *formAuto = new QFormLayout(cajaAuto);
+    formAuto->setRowWrapPolicy(QFormLayout::WrapLongRows);
     formAuto->addRow(tr("Apagarlo a los:"), spinVacio);
     formAuto->addRow(QString(), checkApagarPc);
 
     // Opciones de server.properties (se arman con lo que dice el servidor)
     auto *cajaOpciones = new QGroupBox(tr("Opciones (server.properties)"));
     formulario = new QFormLayout(cajaOpciones);
+    formulario->setRowWrapPolicy(QFormLayout::WrapLongRows);     // con poco lugar, la etiqueta va arriba
+    formulario->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
 
     // Extras
     auto *cajaExtras = new QGroupBox(tr("Extras"));
-    botonGeyser = new QPushButton(tr("Geyser + Floodgate (amigos con Bedrock)"));
+    botonGeyser = botonAccion(QStringLiteral("celular"), tema::colores().acento, tr("Geyser + Floodgate (Bedrock)"));
     botonGeyser->setToolTip(tr("Que entren desde el celular o la consola (Bedrock) con su cuenta de Xbox, sin tener Java"));
-    botonBluemap = new QPushButton(tr("BlueMap (mapa web)"));
+    botonBluemap = botonAccion(QStringLiteral("globo"), tema::colores().ok, tr("BlueMap (mapa web)"));
     botonBluemap->setToolTip(tr("Un mapa 3D del mundo que se ve en el navegador (puerto 8100). Baja recursos del juego (acepta el EULA de Mojang)."));
-    botonIcono = new QPushButton(tema::icono(QStringLiteral("abrir")), tr("Ícono…"));
+    botonIcono = botonAccion(QStringLiteral("abrir"), tema::colores().aviso, tr("Ícono…"));
     botonIcono->setToolTip(tr("La imagen que se ve en la lista de servidores (se achica sola a 64×64)"));
-    auto *filaExtras = new QHBoxLayout(cajaExtras);
+    auto *filaExtras = new QVBoxLayout(cajaExtras);
+    filaExtras->setSpacing(1);
     filaExtras->addWidget(botonGeyser);
     filaExtras->addWidget(botonBluemap);
     filaExtras->addWidget(botonIcono);
-    filaExtras->addStretch();
 
     contenido = new QWidget;
     auto *capaContenido = new QVBoxLayout(contenido);
+    capaContenido->setContentsMargins(0, 0, 14, 0);    // (la barra de desplazamiento va encima del contenido)
     capaContenido->addWidget(cajaMotd);
     capaContenido->addWidget(cajaAuto);
     capaContenido->addWidget(cajaOpciones);
@@ -383,6 +400,7 @@ PestanaOpciones::PestanaOpciones(const QString &script_, QWidget *parent)
     auto *scroll = new QScrollArea;
     scroll->setWidgetResizable(true);
     scroll->setFrameShape(QFrame::NoFrame);
+    scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     scroll->setWidget(contenido);
     botonGuardar = new QPushButton(tema::icono(QStringLiteral("listo")), tr("Guardar cambios"));
     tema::marcarPrimario(botonGuardar);
@@ -390,6 +408,7 @@ PestanaOpciones::PestanaOpciones(const QString &script_, QWidget *parent)
     filaGuardar->addWidget(estado, 1);
     filaGuardar->addWidget(botonGuardar);
     auto *capa = new QVBoxLayout(this);
+    capa->setContentsMargins(0, 0, 0, 0);
     capa->addWidget(scroll, 1);
     capa->addLayout(filaGuardar);
 
@@ -494,6 +513,8 @@ void PestanaOpciones::armar()
         campo->setToolTip(o.ayuda);
         auto *ayuda = new QLabel(o.ayuda);
         ayuda->setWordWrap(true);
+        ayuda->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);    // que no pida más ancho del que hay
+        ayuda->setMinimumWidth(120);
         ayuda->setStyleSheet(QStringLiteral("color:%1;").arg(tema::colores().texto3.name()));
         auto *celda = new QWidget;
         auto *capa = new QVBoxLayout(celda);
@@ -620,16 +641,24 @@ PestanaRespaldos::PestanaRespaldos(const QString &script_, QWidget *parent)
     lista->header()->setSectionResizeMode(1, QHeaderView::Stretch);
     for (int c : {0, 2, 3})
         lista->header()->setSectionResizeMode(c, QHeaderView::ResizeToContents);
-    botonGuardar = new QPushButton(tema::icono(QStringLiteral("respaldo")), tr("Guardar el mundo ahora"));
-    botonRestaurar = new QPushButton(tema::icono(QStringLiteral("restaurar")), tr("Restaurar…"));
-    auto *fila = new QHBoxLayout;
-    fila->addWidget(botonGuardar);
-    fila->addWidget(botonRestaurar);
-    fila->addStretch();
-    auto *capa = new QVBoxLayout(this);
-    capa->addWidget(estado);
-    capa->addWidget(lista, 1);
-    capa->addLayout(fila);
+    botonGuardar = botonAccion(QStringLiteral("respaldo"), tema::colores().ok, tr("Guardar mundo"));
+    botonGuardar->setToolTip(tr("Guarda el mundo ahora en Respaldos (también con el servidor prendido)"));
+    botonRestaurar = botonAccion(QStringLiteral("restaurar"), tema::colores().aviso, tr("Restaurar…"));
+    auto *izquierda = new QVBoxLayout;
+    izquierda->addWidget(estado);
+    izquierda->addWidget(lista, 1);
+    auto *columna = new QVBoxLayout;
+    columna->setSpacing(1);
+    columna->addWidget(botonGuardar);
+    columna->addWidget(botonRestaurar);
+    columna->addStretch();
+    auto *contenedor = new QWidget;
+    contenedor->setFixedWidth(210);
+    contenedor->setLayout(columna);
+    auto *capa = new QHBoxLayout(this);
+    capa->setContentsMargins(0, 0, 0, 0);
+    capa->addLayout(izquierda, 1);
+    capa->addWidget(contenedor);
     connect(&consulta, &ProcesoLogica::evento, this, [this](const QString &palabra, const QString &resto) {
         // RESPALDO tipo<tab>archivo<tab>fecha<tab>tamaño
         const QStringList c = resto.split(u'\t');
