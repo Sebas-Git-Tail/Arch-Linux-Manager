@@ -1,5 +1,5 @@
-// Página «Panel de Minecraft»: los servidores de Minecraft Servers/Servidores (iniciar, detener,
-// reiniciar, Paper automático, RAM, reiniciar mundo), la consola del elegido (registro en vivo,
+// Página «Panel de Minecraft»: los servidores de Minecraft Servers/Servidores (crear con un asistente, iniciar,
+// detener, reiniciar, Paper automático, RAM, reiniciar mundo), la consola del elegido (registro en vivo,
 // conectados y comandos; desde la 4.12.0 corren en tmux), sus plugins (reconocidos en Modrinth, con
 // actualización) y Prism Launcher. Solo es la interfaz; la lógica está en Logica/Minecraft.sh.
 // El respaldo de Minecraft tiene su propia página (PaginaRespaldo).
@@ -37,7 +37,7 @@ protected:
 private:
     void consultar();          // servidores (y la primera vez, las instancias de Prism)
     void consultarPlugins();   // los del servidor elegido
-    void ejecutar(const QStringList &argumentos, const QString &estado);
+    void ejecutar(const QStringList &argumentos, const QString &estado, const QByteArray &entrada = {});
     void iniciar();
     void detener();
     void reiniciar();
@@ -48,6 +48,7 @@ private:
     void actualizarPlugins();
     void instalarPlugin();
     void jugar();
+    void crearServidor();     // asistente (AsistenteMinecraft) + «Minecraft.sh crear»
     void verConsola();             // registro en vivo del elegido (se corta al cambiar o al salir)
     void consultarJugadores();
     void enviarComando();
@@ -81,6 +82,8 @@ private:
     QStringList historial;     // comandos enviados (flechas arriba/abajo)
     int posHistorial = 0;
     bool cancelable = false;   // la acción en curso es un aviso de apagado (se puede cancelar)
+    bool creando = false;      // la acción en curso es crear un servidor (se puede cancelar: no queda nada)
+    bool pluginsSonMods = false;   // el servidor de la pestaña es Fabric/Forge (mods/) y no Paper (plugins/)
     enum class Paso { Servidores, Instancias } paso = Paso::Servidores;
     QSet<QString> marcados;    // servidores marcados (se conservan al actualizar la lista)
     bool clicEnCasilla = false;

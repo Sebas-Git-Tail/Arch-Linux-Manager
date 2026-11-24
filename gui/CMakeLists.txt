@@ -34,6 +34,7 @@ add_executable(Arch-Linux-Manager-Qt
     PaginaSteam.cpp PaginaSteam.h PaginaSteam.ui
     PaginaAndroid.cpp PaginaAndroid.h PaginaAndroid.ui
     PaginaMinecraft.cpp PaginaMinecraft.h PaginaMinecraft.ui
+    AsistenteMinecraft.cpp AsistenteMinecraft.h
     PaginaTutoriales.cpp PaginaTutoriales.h PaginaTutoriales.ui
     PaginaNotificacion.cpp PaginaNotificacion.h PaginaNotificacion.ui
     PaginaAUR.cpp PaginaAUR.h

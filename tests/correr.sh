@@ -256,6 +256,146 @@ ping_falso=$!; sleep 0.5
 igual "ping lee conectados, máximo y nombres" "$(python3 -I "$LOGICA/minecraft_api.py" ping "$puerto")" "$(printf 'JUGADORES 2\t20\tSteve,.Alex')"
 wait "$ping_falso" 2>/dev/null
 python3 -I "$LOGICA/minecraft_api.py" ping 99999 2>/dev/null; igual "ping rechaza un puerto fuera de rango" "$?" "1"
+# Crear servidores (desde la 4.14.0): Mojang, PaperMC, Fabric y Modrinth falsos (archivos y file://), Java falso
+echo "Minecraft.sh crear (APIs y Java falsos: no toca la red)"
+FALSA="$TMP/api-crear"; mkdir -p "$FALSA" "$TMP/descargas"
+export MINECRAFT_API_FALSA="$FALSA" MINECRAFT_FABRIC_META="file://$TMP/fabric" MINECRAFT_JVM_DIR="$TMP/jvm"
+mkdir -p "$TMP/jvm/java-21-openjdk/bin" "$TMP/jvm/java-17-openjdk/bin"
+printf '#!/bin/bash\necho "java21 $*" > "$PWD/java-usado.txt"\n' > "$TMP/jvm/java-21-openjdk/bin/java"
+printf '#!/bin/bash\nexit 0\n' > "$TMP/jvm/java-17-openjdk/bin/java"
+chmod +x "$TMP"/jvm/*/bin/java
+PYTHONDONTWRITEBYTECODE=1 python3 - "$FALSA" "$TMP" "$LOGICA" <<'PY'
+import gzip, hashlib, io, json, os, re, struct, sys, zipfile
+falsa, tmp, logica = sys.argv[1:4]
+sys.path.insert(0, logica)
+import minecraft_api as m
+def guardar(url, datos, ext=".json"):
+    nombre = re.sub(r"[^A-Za-z0-9]+", "_", url.split("://", 1)[-1])[:150] + ext
+    with open(os.path.join(falsa, nombre), "w") as f:
+        f.write(datos if ext == ".txt" else json.dumps(datos))
+def jar(ruta, archivos):
+    os.makedirs(os.path.dirname(ruta), exist_ok=True)
+    with zipfile.ZipFile(ruta, "w") as z:
+        for n, c in archivos.items():
+            z.writestr(n, c)
+    datos = open(ruta, "rb").read()
+    return "file://" + ruta, hashlib.sha1(datos).hexdigest(), hashlib.sha256(datos).hexdigest(), hashlib.sha512(datos).hexdigest()
+d = os.path.join(tmp, "descargas")
+# Mojang: 26.3 (Java 21) y 26.1.2
+u_srv, s1, _, _ = jar(f"{d}/server.jar", {"net/minecraft/Main.class": "x"})
+guardar(m.MOJANG, {"versions": [
+    {"id": "26.3", "type": "release", "url": "https://piston-meta.mojang.com/v1/packages/a/26.3.json"},
+    {"id": "26.1.2", "type": "release", "url": "https://piston-meta.mojang.com/v1/packages/b/26.1.2.json"}]})
+for v in ("26.3", "26.1.2"):
+    guardar(f"https://piston-meta.mojang.com/v1/packages/{'a' if v == '26.3' else 'b'}/{v}.json",
+            {"javaVersion": {"majorVersion": 21}, "downloads": {"server": {"url": u_srv, "sha1": s1}}})
+# Paper 26.3
+u_p, _, s256, _ = jar(f"{d}/paper-26.3-300.jar", {"io/papermc/Main.class": "x"})
+guardar("https://fill.papermc.io/v3/projects/paper/versions/26.3/builds",
+        [{"id": 300, "channel": "STABLE", "downloads": {"server:default": {"name": "paper-26.3-300.jar", "url": u_p, "checksums": {"sha256": s256}}}}])
+# Fabric (el lanzador se baja de file://…/fabric/…)
+fab = os.environ["MINECRAFT_FABRIC_META"]
+guardar(f"{fab}/versions/loader/26.3", [{"loader": {"version": "0.20.1", "stable": True}}, {"loader": {"version": "0.19.0", "stable": True}}])
+guardar(f"{fab}/versions/installer", [{"version": "1.1.2", "stable": True}])
+for lv in ("0.20.1", "0.19.0"):
+    jar(f"{tmp}/fabric/versions/loader/26.3/{lv}/1.1.2/server/jar", {"net/fabricmc/Launch.class": lv})
+# Modrinth: «chunky» tiene Paper y Fabric (con Fabric API obligatoria); «solo-paper» no tiene Fabric; «sodium» es del cliente
+def proyecto(slug, lado="optional", tipo="mod"):
+    guardar(f"{m.MODRINTH}/project/{slug}", {"id": "id-" + slug, "slug": slug, "title": slug.capitalize(), "server_side": lado, "project_type": tipo})
+def versiones(slug, tipo, lista):
+    guardar(f"{m.MODRINTH}/project/{slug}/version?loaders=" + m.q(json.dumps(m.CARGADORES_TIPO[tipo])) + "&game_versions=" + m.q(json.dumps(["26.3"])), lista)
+def version(archivo, contenido, deps=()):
+    u, _, _, s512 = jar(f"{d}/{archivo}", contenido)
+    return {"id": "v-" + archivo, "version_number": "1.0", "files": [{"primary": True, "url": u, "filename": archivo, "hashes": {"sha512": s512}}],
+            "dependencies": [{"project_id": p, "dependency_type": "required"} for p in deps]}
+for slug in ("chunky", "solo-paper", "fabric-api"):
+    proyecto(slug)
+guardar(f"{m.MODRINTH}/project/id-fabric-api", {"id": "id-fabric-api", "slug": "fabric-api", "title": "Fabric API", "server_side": "optional"})
+proyecto("sodium", lado="unsupported")
+versiones("chunky", "paper", [version("Chunky-Paper.jar", {"plugin.yml": "name: Chunky"})])
+versiones("chunky", "fabric", [version("Chunky-Fabric.jar", {"fabric.mod.json": "{}"}, deps=["id-fabric-api"])])
+versiones("fabric-api", "fabric", [version("fabric-api.jar", {"fabric.mod.json": "{}"})])
+versiones("solo-paper", "paper", [version("SoloPaper.jar", {"plugin.yml": "name: S"})])
+versiones("solo-paper", "fabric", [])
+# Modpacks (.mrpack): uno bueno (Fabric 0.19.0, un mod de servidor, uno de cliente y config) y uno con una ruta peligrosa
+u_mod, s1_mod, _, s512_mod = jar(f"{d}/lithium.jar", {"fabric.mod.json": "{}"})
+def mrpack(ruta, archivos, deps):
+    with zipfile.ZipFile(ruta, "w") as z:
+        z.writestr("modrinth.index.json", json.dumps({"formatVersion": 1, "game": "minecraft", "versionId": "1", "name": "P",
+                   "files": archivos, "dependencies": deps}))
+        z.writestr("overrides/config/pack.txt", "de overrides")
+        z.writestr("server-overrides/config/pack.txt", "de server-overrides")
+        z.writestr("client-overrides/options.txt", "del cliente")
+bueno = {"path": "mods/lithium.jar", "hashes": {"sha1": s1_mod, "sha512": s512_mod}, "downloads": [u_mod], "env": {"server": "required"}}
+cliente = dict(bueno, path="mods/solo-cliente.jar", env={"server": "unsupported"})
+mrpack(f"{d}/bueno.mrpack", [bueno, cliente], {"minecraft": "26.3", "fabric-loader": "0.19.0"})
+mrpack(f"{d}/malo.mrpack", [dict(bueno, path="../../escapado.jar")], {"minecraft": "26.3", "fabric-loader": "0.19.0"})
+mrpack(f"{d}/neoforge.mrpack", [bueno], {"minecraft": "26.3", "neoforge": "21.0"})
+# Un mundo de 26.3 en un zip (level.dat con Data.Version.Name) y uno «del futuro»
+def nbt_mundo(version):
+    s = lambda t: struct.pack(">H", len(t.encode())) + t.encode()
+    cuerpo = b"\x0a" + s("") + b"\x0a" + s("Data") + b"\x03" + s("SpawnX") + struct.pack(">i", 5) + b"\x0a" + s("Version") \
+        + b"\x08" + s("Name") + s(version) + b"\x00" + b"\x00" + b"\x00"
+    return gzip.compress(cuerpo)
+for nombre, v in (("mundo", "26.3"), ("futuro", "27.1")):
+    with zipfile.ZipFile(f"{d}/{nombre}.zip", "w") as z:
+        z.writestr("MiMundo/level.dat", nbt_mundo(v))
+        z.writestr("MiMundo/region/r.0.0.mca", "datos")
+PY
+C() { bash "$LOGICA/Minecraft.sh" crear 2>&1; }
+dice() { grep -qF -- "$1" <<< "$2"; }    # (sin tubería: crear falla a propósito y pipefail lo tomaría como falla)
+base='GRUPO=Amigos\nNOMBRE=Nuevo\nVERSION=26.3\nEULA=true\n'
+salida=$(printf "${base}TIPO=paper\nRAM=6G\nMOTD=Servidor de Ñandú\nMODO=creative\nCOMPLEMENTO=chunky\nMUNDO=%s\n" "$TMP/descargas/mundo.zip" | C)
+nuevo="$S/Amigos/26.3/26.3 Nuevo"
+grep -q '^CREADO Amigos/26.3/26.3 Nuevo$' <<< "$salida" && ok "crear Paper: dice la ruta del servidor nuevo" || mal "crear Paper" "$(tail -3 <<< "$salida")"
+grep -q $'^SERVIDOR APAGADO\tAmigos/26.3/26.3 Nuevo\tpaper\t26.3' <<< "$(MC servidores)" && ok "crear: aparece solo en la lista" || mal "crear: aparece en la lista"
+igual "crear Paper: servidor.conf con jar, RAM y Java" "$(grep -E '^(TIPO|JAR|RAM|JAVA)=' "$nuevo/servidor.conf" | tr '\n' ' ')" 'TIPO=paper JAR="paper-26.3-300.jar" RAM=6G JAVA=21 '
+[[ -f "$nuevo/plugins/Chunky-Paper.jar" && ! -e "$nuevo/plugins/Chunky-Fabric.jar" ]] && ok "crear Paper: baja la versión Paper del plugin" || mal "crear Paper: plugin"
+[[ -f "$nuevo/world/level.dat" && -f "$nuevo/world/region/r.0.0.mca" ]] && ok "crear: copia el mundo del zip a world/" || mal "crear: mundo del zip"
+grep -qx 'eula=true' "$nuevo/eula.txt" && grep -qx 'gamemode=creative' "$nuevo/server.properties" && grep -qx 'motd=Servidor de \\u00d1and\\u00fa' "$nuevo/server.properties" \
+    && ok "crear: eula y server.properties (con acentos escapados)" || mal "crear: server.properties" "$(cat "$nuevo/server.properties")"
+[[ ! -e "$MINECRAFT_DIR/.creando" ]] && ok "crear: no deja la carpeta temporal" || mal "crear: quedó .creando"
+printf "${base}TIPO=paper\n" | C > /dev/null; igual "crear: rechaza un nombre que ya existe" "$?" "2"
+printf 'GRUPO=Amigos\nNOMBRE=Otro\nVERSION=26.3\nTIPO=paper\n' | C > /dev/null; igual "crear: sin aceptar el EULA no crea" "$?" "2"
+printf 'GRUPO=../x\nNOMBRE=Otro\nVERSION=26.3\nTIPO=paper\nEULA=true\n' | C > /dev/null; igual "crear: rechaza un grupo con /" "$?" "2"
+dice 'Vanilla no usa plugins ni mods' "$(printf "${base/Nuevo/V}TIPO=vanilla\nCOMPLEMENTO=chunky\n" | C)" && ok "crear: Vanilla no acepta plugins ni mods" || mal "crear: Vanilla con plugins"
+dice 'Los modpacks son para Fabric o Forge' "$(printf "${base/Nuevo/P}TIPO=paper\nMODPACK_ARCHIVO=%s\n" "$TMP/descargas/bueno.mrpack" | C)" && ok "crear: Paper no acepta modpacks" || mal "crear: Paper con modpack"
+salida=$(printf "${base/Nuevo/F1}TIPO=fabric\nCOMPLEMENTO=solo-paper\n" | C)
+grep -q 'no tiene versión para Fabric 26.3' <<< "$salida" && [[ ! -e "$S/Amigos/26.3/26.3 F1" ]] && ok "crear: no instala un plugin de Paper en Fabric (y no crea nada)" || mal "crear: plugin de Paper en Fabric" "$salida"
+dice 'solo para el juego' "$(printf "${base/Nuevo/F2}TIPO=fabric\nCOMPLEMENTO=sodium\n" | C)" && ok "crear: rechaza mods solo de cliente" || mal "crear: mod de cliente"
+salida=$(printf "${base/Nuevo/Fab}TIPO=fabric\nCOMPLEMENTO=chunky\n" | C); f="$S/Amigos/26.3/26.3 Fab"
+[[ -f "$f/mods/Chunky-Fabric.jar" && -f "$f/mods/fabric-api.jar" ]] && ok "crear Fabric: el mod y su dependencia (Fabric API)" || mal "crear Fabric: mods" "$(tail -3 <<< "$salida")"
+igual "crear Fabric: lanzador y server.jar" "$(grep '^JAR=' "$f/servidor.conf")|$( [[ -f "$f/server.jar" ]] && echo si)" 'JAR="fabric-server-mc.26.3-loader.0.20.1-launcher.1.1.2.jar"|si'
+salida=$(printf "${base/Nuevo/Pack}TIPO=fabric\nMODPACK_ARCHIVO=%s\n" "$TMP/descargas/bueno.mrpack" | C); f="$S/Amigos/26.3/26.3 Pack"
+igual "modpack: usa el cargador del pack" "$(grep '^LOADER=' "$f/servidor.conf" 2>/dev/null)" 'LOADER="0.19.0"'
+[[ -f "$f/mods/lithium.jar" && ! -e "$f/mods/solo-cliente.jar" && ! -e "$f/options.txt" ]] && ok "modpack: solo lo del lado del servidor" || mal "modpack: archivos" "$(tail -3 <<< "$salida")"
+igual "modpack: server-overrides pisa a overrides" "$(cat "$f/config/pack.txt" 2>/dev/null)" "de server-overrides"
+sha=$(sha512sum "$TMP/descargas/bueno.mrpack" | cut -d' ' -f1)
+salida=$(printf '%s\n' GRUPO=Amigos NOMBRE=Pack2 VERSION=26.3 EULA=true TIPO=fabric "MODPACK_URL=file://$TMP/descargas/bueno.mrpack" "MODPACK_SHA512=$sha" | C)
+[[ -f "$S/Amigos/26.3/26.3 Pack2/mods/lithium.jar" ]] && ok "modpack de Modrinth: lo baja comprobando la suma" || mal "modpack por URL" "$(tail -2 <<< "$salida")"
+dice 'Modpack de Modrinth raro' "$(printf '%s\n' GRUPO=Amigos NOMBRE=Pack3 VERSION=26.3 EULA=true TIPO=fabric "MODPACK_URL=http://x/y.mrpack" "MODPACK_SHA512=$sha" | C)" \
+    && ok "modpack: solo por https" || mal "modpack por http"
+salida=$(printf "${base/Nuevo/Malo}TIPO=fabric\nMODPACK_ARCHIVO=%s\n" "$TMP/descargas/malo.mrpack" | C)
+grep -q 'peligros' <<< "$salida" && [[ ! -e "$S/Amigos/26.3/26.3 Malo" && ! -e "$TMP/escapado.jar" && ! -e "$MINECRAFT_DIR/escapado.jar" ]] \
+    && ok "modpack: rechaza rutas que se salen de la carpeta (y no deja nada)" || mal "modpack peligroso" "$salida"
+dice 'usa neoforge' "$(printf "${base/Nuevo/Neo}TIPO=fabric\nMODPACK_ARCHIVO=%s\n" "$TMP/descargas/neoforge.mrpack" | C)" && ok "modpack: rechaza uno de NeoForge en Fabric" || mal "modpack de NeoForge"
+dice 'es de Minecraft 27.1' "$(printf "${base/Nuevo/Viejo}VERSION=26.1.2\nTIPO=vanilla\nMUNDO=%s\n" "$TMP/descargas/futuro.zip" | C)" && ok "crear: no abre un mundo más nuevo que la versión" || mal "crear: mundo del futuro"
+printf "${base/Nuevo/Copia}TIPO=vanilla\nMUNDO_SERVIDOR=Amigos/26.3/26.3 Nuevo\n" | C > /dev/null
+[[ -f "$S/Amigos/26.3/26.3 Copia/world/level.dat" ]] && ok "crear: copia el mundo de otro servidor" || mal "crear: mundo de otro servidor"
+mkdir -p "$TMP/j"; (cd "$TMP/j" && echo x > plugin.yml && python3 -c "import zipfile; z=zipfile.ZipFile('p.jar','w'); z.write('plugin.yml'); z.close()")
+dice 'no es un mod de Fabric' "$(printf "${base/Nuevo/F3}TIPO=fabric\nCOMPLEMENTO_ARCHIVO=%s\n" "$TMP/j/p.jar" | C)" && ok "crear: un .jar suelto tiene que ser del cargador" || mal "crear: jar suelto"
+# Lo que ya había, con los tipos nuevos
+dice 'no tiene versión para Fabric' "$(MC plugin solo-paper "Amigos/26.3/26.3 Fab")" && ok "plugin: en Fabric no instala un plugin de Paper" || mal "plugin en Fabric"
+dice 'Vanilla: no usa plugins ni mods' "$(MC plugin chunky "Amigos/26.3/26.3 Copia")" && ok "plugin: en Vanilla no instala nada" || mal "plugin en Vanilla"
+igual "plugins: en Fabric mira mods/" "$(MC plugins "Amigos/26.3/26.3 Fab" | tail -1)" "LISTO 2 mod(s) en 26.3 Fab (Amigos)."
+if command -v tmux > /dev/null; then
+    export MINECRAFT_TMUX="prueba-crear-$$" MINECRAFT_SIN_TERMINAL=1
+    MC iniciar "Amigos/26.3/26.3 Fab" > /dev/null; sleep 1
+    igual "iniciar usa el Java elegido al crearlo" "$(cat "$S/Amigos/26.3/26.3 Fab/java-usado.txt" 2>/dev/null)" "java21 -Xms1G -Xmx4G -jar fabric-server-mc.26.3-loader.0.20.1-launcher.1.1.2.jar nogui"
+    tmux -L "$MINECRAFT_TMUX" kill-server 2>/dev/null
+    unset MINECRAFT_TMUX MINECRAFT_SIN_TERMINAL
+fi
+unset MINECRAFT_API_FALSA MINECRAFT_FABRIC_META MINECRAFT_JVM_DIR
 unset MINECRAFT_DIR
 
 echo "AUR.sh (pacman y AUR falsos: no toca la red ni instala nada)"

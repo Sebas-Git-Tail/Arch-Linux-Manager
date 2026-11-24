@@ -11,8 +11,14 @@
 # servidor.conf hasta 3 niveles adentro aparece sola en el panel (también directo en Servidores/, sin grupo).
 #
 # servidor.conf (lo único que hay que tocar a mano, si hace falta):
-#   NOMBRE="26.3 SMP-1"   TIPO=paper|forge   VERSION=26.3   JAR="paper-26.3-244.jar"   RAM=8G
-# (NOMBRE es solo informativo: manda la carpeta.) Forge arranca con su run.sh (la RAM va en user_jvm_args.txt).
+#   NOMBRE="26.3 SMP-1"   TIPO=paper|vanilla|fabric|forge   VERSION=26.3   JAR="paper-26.3-244.jar"   RAM=8G
+#   JAVA=25 (opcional: qué Java usar, de /usr/lib/jvm; si no está, el de siempre)   LOADER="0.20.1" (informativo)
+# (NOMBRE es solo informativo: manda la carpeta.) Forge arranca con su run.sh (la RAM va en user_jvm_args.txt);
+# los demás con «java -jar JAR». Los servidores nuevos los arma «Minecraft.sh crear» (desde la 4.14.0).
+#
+# Qué acepta cada tipo (lo controla admite(); el asistente y minecraft_api.py siguen las mismas reglas):
+#   paper: plugins (plugins/)   fabric: mods de Fabric (mods/)   forge: mods de Forge (mods/)   vanilla: nada
+#   modpacks de Modrinth: solo fabric o forge, de la misma versión de Minecraft y el mismo cargador.
 
 MINECRAFT_DIR="${MINECRAFT_DIR:-/home/sebastian/Escritorio/Cosas/Minecraft Servers}"
 SERVIDORES_DIR="$MINECRAFT_DIR/Servidores"
@@ -46,21 +52,23 @@ carpeta_servidor() {
 }
 
 # Lee servidor.conf sin ejecutarlo (solo las claves conocidas, con el formato esperado) y deja
-# CONF_TIPO, CONF_VERSION, CONF_JAR y CONF_RAM. Uso: leer_conf "Amigos/26.3/26.3 SMP-1"
+# CONF_TIPO, CONF_VERSION, CONF_JAR, CONF_RAM, CONF_JAVA y CONF_LOADER. Uso: leer_conf "Amigos/26.3/26.3 SMP-1"
 leer_conf() {
     local conf linea clave valor
     conf="$(carpeta_servidor "$1")/servidor.conf"
-    CONF_TIPO=paper; CONF_VERSION=""; CONF_JAR=""; CONF_RAM=8G
+    CONF_TIPO=paper; CONF_VERSION=""; CONF_JAR=""; CONF_RAM=8G; CONF_JAVA=""; CONF_LOADER=""
     [[ -f "$conf" ]] || return 1
     while IFS= read -r linea || [[ -n "$linea" ]]; do
         [[ "$linea" =~ ^([A-Z]+)=(.*)$ ]] || continue
         clave="${BASH_REMATCH[1]}"; valor="${BASH_REMATCH[2]}"
         valor="${valor#\"}"; valor="${valor%\"}"
         case "$clave" in
-            TIPO)    [[ "$valor" =~ ^(paper|forge)$ ]] && CONF_TIPO="$valor" ;;
+            TIPO)    [[ "$valor" =~ ^(paper|forge|fabric|vanilla)$ ]] && CONF_TIPO="$valor" ;;
             VERSION) [[ "$valor" =~ ^[0-9][0-9a-z.\-]*$ ]] && CONF_VERSION="$valor" ;;
             JAR)     [[ "$valor" =~ ^[A-Za-z0-9._\-]+\.jar$ ]] && CONF_JAR="$valor" ;;
             RAM)     [[ "$valor" =~ ^[0-9]+[GM]$ ]] && CONF_RAM="$valor" ;;
+            JAVA)    [[ "$valor" =~ ^[0-9]{1,2}$ ]] && CONF_JAVA="$valor" ;;
+            LOADER)  [[ "$valor" =~ ^[0-9A-Za-z.+\-]{1,40}$ ]] && CONF_LOADER="$valor" ;;
         esac
     done < "$conf"
     return 0
@@ -97,7 +105,7 @@ mundo_servidor() {
 
 # Descarga a un archivo temporal, comprueba que sea un .jar válido (y la suma, si se da) y recién ahí
 # lo copia a cada destino. Así una página de error nunca reemplaza a un .jar que funciona.
-# Uso: descargar_jar URL SUMA destino1 [destino2...]   SUMA: «sha256:…», «sha512:…» o «-»
+# Uso: descargar_jar URL SUMA destino1 [destino2...]   SUMA: «sha1:…», «sha256:…», «sha512:…» o «-»
 descargar_jar() {
     local url="$1" suma="$2"; shift 2
     local tmp destino
@@ -107,6 +115,7 @@ descargar_jar() {
         return 1
     fi
     case "$suma" in
+        sha1:*)   [[ "$(sha1sum "$tmp" | cut -d' ' -f1)" == "${suma#sha1:}" ]] || { rm -f "$tmp"; return 1; } ;;
         sha256:*) [[ "$(sha256sum "$tmp" | cut -d' ' -f1)" == "${suma#sha256:}" ]] || { rm -f "$tmp"; return 1; } ;;
         sha512:*) [[ "$(sha512sum "$tmp" | cut -d' ' -f1)" == "${suma#sha512:}" ]] || { rm -f "$tmp"; return 1; } ;;
     esac
@@ -124,4 +133,39 @@ a_respaldos() {   # $1 servidor, $2 subcarpeta, $3 archivo
     nombre="$(basename "$3")"
     [[ -e "$dest/$nombre" ]] && nombre="$(date +%Y%m%d-%H%M%S)-$nombre"
     mv -f "$3" "$dest/$nombre"
+}
+
+# --- Tipos de servidor ------------------------------------------------------------------------------
+# ¿El tipo acepta esa clase de complemento? Uso: admite TIPO plugins|mods|modpack
+admite() {
+    case "$2" in
+        plugins)       [[ "$1" == paper ]] ;;
+        mods|modpack)  [[ "$1" == fabric || "$1" == forge ]] ;;
+        *)             return 1 ;;
+    esac
+}
+# Carpeta de complementos según el tipo («plugins» o «mods»; vacío si no usa)
+carpeta_complementos() {
+    case "$1" in paper) echo plugins ;; fabric|forge) echo mods ;; *) echo "" ;; esac
+}
+# Nombre para mostrar del tipo
+nombre_tipo() {
+    case "$1" in paper) echo Paper ;; fabric) echo Fabric ;; forge) echo Forge ;; vanilla) echo Vanilla ;; *) echo "$1" ;; esac
+}
+# Carpeta bin del Java pedido (de /usr/lib/jvm): el mismo número, o si no está el más chico que sea más nuevo.
+# Vacío si no hay ninguno que sirva. Uso: java_para 21
+java_para() {
+    local n dir bin mejor="" mejor_bin=""
+    for dir in "${MINECRAFT_JVM_DIR:-/usr/lib/jvm}"/java-*-openjdk; do
+        n="${dir##*/java-}"; n="${n%-openjdk}"
+        [[ "$n" =~ ^[0-9]+$ ]] && (( n >= $1 )) || continue
+        bin="$dir/bin"; [[ -x "$bin/java" ]] || bin="$dir/jre/bin"     # el 8 viene como jre/
+        [[ -x "$bin/java" ]] || continue
+        if [[ -z "$mejor" ]] || (( n < mejor )); then mejor="$n"; mejor_bin="$bin"; fi
+    done
+    [[ -n "$mejor_bin" ]] && echo "$mejor_bin"
+}
+# Las direcciones de descarga tienen que ser https (en las pruebas, con MINECRAFT_API_FALSA, también file://)
+url_valida() {
+    [[ "$1" == https://* ]] || [[ -n "${MINECRAFT_API_FALSA:-}" && "$1" == file://* ]]
 }

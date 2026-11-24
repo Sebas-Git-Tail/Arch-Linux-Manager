@@ -1,4 +1,5 @@
 #include "PaginaMinecraft.h"
+#include "AsistenteMinecraft.h"
 #include "Tema.h"
 #include "ui_PaginaMinecraft.h"
 
@@ -30,6 +31,14 @@ static QString etiqueta(const QString &servidor)
     if (barra < 0)
         return servidor;
     return QStringLiteral("%1 (%2)").arg(servidor.section(u'/', -1), servidor.left(barra));
+}
+
+static QString nombreTipo(const QString &tipo)
+{
+    if (tipo == u"forge") return QStringLiteral("Forge");
+    if (tipo == u"fabric") return QStringLiteral("Fabric");
+    if (tipo == u"vanilla") return QStringLiteral("Vanilla");
+    return QStringLiteral("Paper");
 }
 
 static QStringList etiquetas(const QStringList &servidores)
@@ -95,6 +104,8 @@ PaginaMinecraft::PaginaMinecraft(const QString &logica, QWidget *parent)
     connect(ui->botonDetener, &QPushButton::clicked, this, &PaginaMinecraft::detener);
     connect(ui->botonReiniciar, &QPushButton::clicked, this, &PaginaMinecraft::reiniciar);
     connect(ui->botonActualizarLista, &QPushButton::clicked, this, &PaginaMinecraft::consultar);
+    connect(ui->botonCrear, &QPushButton::clicked, this, &PaginaMinecraft::crearServidor);
+    ui->botonCrear->setIcon(tema::icono(QStringLiteral("agregar")));
     connect(ui->botonPaper, &QPushButton::clicked, this, &PaginaMinecraft::actualizarPaper);
     connect(ui->botonRam, &QPushButton::clicked, this, &PaginaMinecraft::cambiarRam);
     connect(ui->botonReiniciarMundo, &QPushButton::clicked, this, &PaginaMinecraft::reiniciarMundo);
@@ -115,13 +126,14 @@ PaginaMinecraft::PaginaMinecraft(const QString &logica, QWidget *parent)
     connect(&plugins, &ProcesoLogica::terminado, this, [this](int codigo, bool cancelado) {
         if (cancelado)
             return;
+        const QString clase = pluginsSonMods ? tr("Mods") : tr("Plugins");
         if (ui->arbolPlugins->topLevelItemCount() == 0 && codigo == 0)
-            ui->arbolPlugins->setHeaderLabels({tr("Plugin (no tiene)"), tr("Versión"), tr("Nueva"), tr("Estado")});
+            ui->arbolPlugins->setHeaderLabels({pluginsSonMods ? tr("Mod (no tiene)") : tr("Plugin (no tiene)"), tr("Versión"), tr("Nueva"), tr("Estado")});
         ui->grupoPlugins->setTitle(pluginsNuevos > 0
-            ? tr("Plugins de %1: %2 con versión nueva").arg(etiqueta(pluginsDe)).arg(pluginsNuevos)
-            : tr("Plugins de %1").arg(etiqueta(pluginsDe)));
+            ? tr("%1 de %2: %3 con versión nueva").arg(clase, etiqueta(pluginsDe)).arg(pluginsNuevos)
+            : tr("%1 de %2").arg(clase, etiqueta(pluginsDe)));
         ui->pestanasServidor->setTabText(ui->pestanasServidor->indexOf(ui->pestanaPlugins),
-            pluginsNuevos > 0 ? tr("Plugins (%1 con versión nueva)").arg(pluginsNuevos) : tr("Plugins"));
+            pluginsNuevos > 0 ? tr("%1 (%2 con versión nueva)").arg(clase).arg(pluginsNuevos) : clase);
         actualizarBotones();
     });
     connect(&accion, &ProcesoLogica::evento, this, &PaginaMinecraft::eventoAccion);
@@ -300,7 +312,7 @@ void PaginaMinecraft::eventoConsulta(const QString &palabra, const QString &rest
             grupo->setExpanded(true);
         item->setText(0, nombre.section(u'/', -1) + (encendido ? tr("  (encendido)") : QString()));
         item->setIcon(0, tema::icono(QStringLiteral("punto"), encendido ? tema::colores().ok : tema::colores().texto3));
-        item->setText(1, (c.at(2) == u"forge" ? QStringLiteral("Forge ") : QStringLiteral("Paper ")) + c.at(3));
+        item->setText(1, nombreTipo(c.at(2)) + u' ' + c.at(3));
         item->setText(2, c.at(4));
         item->setText(3, ultimo);
         item->setText(4, c.at(6));
@@ -352,15 +364,20 @@ void PaginaMinecraft::consultarPlugins()
 {
     plugins.cancelarYEsperar();
     ui->arbolPlugins->clear();
-    ui->arbolPlugins->setHeaderLabels({tr("Plugin"), tr("Versión"), tr("Nueva"), tr("Estado")});
     pluginsNuevos = 0;
     pluginsDe = servidorElegido();
+    const QTreeWidgetItem *actual = ui->arbolServidores->currentItem();
+    const QString tipo = actual ? actual->data(0, RolTipo).toString() : QString();
+    pluginsSonMods = tipo == u"fabric" || tipo == u"forge";
+    ui->arbolPlugins->setHeaderLabels({pluginsSonMods ? tr("Mod") : tr("Plugin"), tr("Versión"), tr("Nueva"), tr("Estado")});
+    ui->pestanasServidor->setTabText(ui->pestanasServidor->indexOf(ui->pestanaPlugins), pluginsSonMods ? tr("Mods") : tr("Plugins"));
     if (pluginsDe.isEmpty()) {
-        ui->grupoPlugins->setTitle(tr("Plugins del servidor elegido (se reconocen en Modrinth)"));
+        ui->grupoPlugins->setTitle(tr("Plugins o mods del servidor elegido (se reconocen en Modrinth)"));
         actualizarBotones();
         return;
     }
-    ui->grupoPlugins->setTitle(tr("Plugins de %1: consultando Modrinth…").arg(etiqueta(pluginsDe)));
+    ui->grupoPlugins->setTitle((pluginsSonMods ? tr("Mods de %1: consultando Modrinth…") : tr("Plugins de %1: consultando Modrinth…"))
+                                   .arg(etiqueta(pluginsDe)));
     plugins.iniciar(script, {QStringLiteral("plugins"), pluginsDe});
     actualizarBotones();
 }
@@ -452,6 +469,7 @@ void PaginaMinecraft::actualizarBotones()
     ui->botonActualizarPlugins->setEnabled(libre && hay && !encendido && !plugins.ocupado() && pluginsNuevos > 0
                                            && pluginsDe == servidorElegido());
     ui->botonPlugin->setEnabled(libre);
+    ui->botonCrear->setEnabled(libre);
     ui->grupoPrism->setEnabled(libre && ui->comboInstancia->count() > 0);
 
     const bool comandos = consola == Consola::Comandos;
@@ -465,14 +483,14 @@ void PaginaMinecraft::actualizarBotones()
         : QString());
 }
 
-void PaginaMinecraft::ejecutar(const QStringList &argumentos, const QString &estado)
+void PaginaMinecraft::ejecutar(const QStringList &argumentos, const QString &estado, const QByteArray &entrada)
 {
     mensajeFinal.clear();
     tema::mostrarEstado(ui->etiquetaEstado, estado);
     ui->barraProgreso->setRange(0, 0);    // sin porcentaje: barra «ocupada»
     ui->barraProgreso->show();
-    accion.iniciar(script, argumentos);
-    ui->botonCancelar->setVisible(cancelable);
+    accion.iniciar(script, argumentos, entrada);
+    ui->botonCancelar->setVisible(cancelable || creando);
     actualizarBotones();
 }
 
@@ -576,18 +594,20 @@ void PaginaMinecraft::actualizarPlugins()
 {
     const QString servidor = servidorElegido();
     if (QMessageBox::question(this, windowTitle(),
-            tr("Se van a actualizar %n plugin(s) de %1. Los anteriores quedan en Respaldos/%2/plugins. ¿Continuar?",
-               nullptr, pluginsNuevos).arg(etiqueta(servidor), servidor)) != QMessageBox::Yes)
+            tr("Se van a actualizar %1 %2 de %3. Los anteriores quedan en Respaldos/%4/%5. ¿Continuar?")
+               .arg(pluginsNuevos).arg(pluginsSonMods ? tr("mod(s)") : tr("plugin(s)"), etiqueta(servidor), servidor,
+                    pluginsSonMods ? QStringLiteral("mods") : QStringLiteral("plugins"))) != QMessageBox::Yes)
         return;
     recargarPlugins = true;
-    ejecutar({QStringLiteral("plugins-actualizar"), servidor}, tr("Actualizando plugins de %1…").arg(etiqueta(servidor)));
+    ejecutar({QStringLiteral("plugins-actualizar"), servidor},
+             (pluginsSonMods ? tr("Actualizando mods de %1…") : tr("Actualizando plugins de %1…")).arg(etiqueta(servidor)));
 }
 
 void PaginaMinecraft::instalarPlugin()
 {
     const QString texto = ui->editPlugin->text().trimmed();
     if (texto.isEmpty()) {
-        tema::mostrarEstado(ui->etiquetaEstado, tr("Escribí el nombre del plugin en Modrinth (o pegá su URL)."));
+        tema::mostrarEstado(ui->etiquetaEstado, tr("Escribí el nombre del plugin o mod en Modrinth (o pegá su URL)."));
         return;
     }
     QStringList servidores = servidoresMarcados();
@@ -618,6 +638,11 @@ void PaginaMinecraft::eventoAccion(const QString &palabra, const QString &resto)
         mensajeFinal = resto;
     } else if (palabra == u"AVISO") {
         ui->registro->appendPlainText(resto);
+    } else if (palabra == u"CREADO") {
+        // El servidor nuevo queda elegido y con su grupo abierto
+        elegido = resto;
+        if (resto.contains(u'/'))
+            gruposAbiertos.insert(resto.section(u'/', 0, 0), true);
     }
 }
 
@@ -627,6 +652,8 @@ void PaginaMinecraft::terminoAccion(int codigo, bool cancelado)
     ui->botonCancelar->hide();
     if (cancelado && cancelable)
         tema::mostrarEstado(ui->etiquetaEstado, tr("Cancelado: el servidor sigue prendido (se avisó en el chat)."));
+    else if (cancelado && creando)
+        tema::mostrarEstado(ui->etiquetaEstado, tr("Cancelado: no se creó nada."));
     else if (cancelado)
         tema::mostrarEstado(ui->etiquetaEstado, tr("Cancelado."));
     else if (codigo == 0)
@@ -636,6 +663,7 @@ void PaginaMinecraft::terminoAccion(int codigo, bool cancelado)
     if (!mensajeFinal.isEmpty())
         ui->registro->appendPlainText(mensajeFinal);
     cancelable = false;
+    creando = false;
     actualizarBotones();
 
     if (recargarPlugins) {
@@ -645,4 +673,20 @@ void PaginaMinecraft::terminoAccion(int codigo, bool cancelado)
     // El servidor tarda unos segundos en arrancar java: la lista se actualiza después
     consultar();
     QTimer::singleShot(8000, this, &PaginaMinecraft::consultar);
+}
+
+// Asistente para un servidor nuevo: arma la configuración y «Minecraft.sh crear» la usa (por stdin)
+void PaginaMinecraft::crearServidor()
+{
+    QHash<QString, bool> existentes;
+    for (QTreeWidgetItemIterator it(ui->arbolServidores); *it; ++it) {
+        const QString nombre = (*it)->data(0, RolNombre).toString();
+        if (!nombre.isEmpty())
+            existentes.insert(nombre, (*it)->data(0, RolEncendido).toBool());
+    }
+    AsistenteMinecraft asistente(script, existentes, this);
+    if (asistente.exec() != QDialog::Accepted)
+        return;
+    creando = true;
+    ejecutar({QStringLiteral("crear")}, tr("Creando %1…").arg(asistente.titulo()), asistente.configuracion());
 }

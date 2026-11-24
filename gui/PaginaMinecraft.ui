@@ -122,6 +122,16 @@
          </spacer>
         </item>
         <item>
+         <widget class="QPushButton" name="botonCrear">
+          <property name="text">
+           <string>Crear servidor…</string>
+          </property>
+          <property name="toolTip">
+           <string>Un servidor nuevo: grupo, versión, Vanilla/Paper/Fabric/Forge, mundo, plugins o mods y modpacks</string>
+          </property>
+         </widget>
+        </item>
+        <item>
          <widget class="QPushButton" name="botonActualizarLista">
           <property name="text">
            <string>Actualizar lista</string>
@@ -282,7 +292,7 @@
        <item>
           <widget class="QGroupBox" name="grupoPlugins">
            <property name="title">
-            <string>Plugins del servidor elegido (se reconocen en Modrinth)</string>
+            <string>Plugins o mods del servidor elegido (se reconocen en Modrinth)</string>
            </property>
            <layout class="QVBoxLayout" name="layoutPlugins">
             <item>
@@ -357,7 +367,7 @@
               <item>
                <widget class="QLineEdit" name="editPlugin">
                 <property name="placeholderText">
-                 <string>Plugin nuevo: nombre en Modrinth (ej. Chunky) o su URL</string>
+                 <string>Plugin o mod: nombre en Modrinth (ej. Chunky) o su URL (cada servidor recibe el que le sirve)</string>
                 </property>
                </widget>
               </item>

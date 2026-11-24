@@ -3,6 +3,20 @@
 Lo que cambió en cada versión. El Manager lo muestra la primera vez que se abre una versión nueva y siempre
 desde el botón del regalito. Los cambios marcados [Sebastián] solo aparecen en sus equipos.
 
+## 4.14.0 (23/11/2026)
+- [Sebastián] Panel de Minecraft: «Crear servidor…» arma un servidor nuevo paso a paso: grupo y nombre,
+  Vanilla, Paper, Fabric o Forge y la versión (solo las que existen para ese software), o un modpack de
+  Modrinth; un mundo que ya tengas (carpeta, .zip o el de otro servidor), plugins (Paper) o mods
+  (Fabric/Forge) de Modrinth con sus dependencias, y la configuración (memoria, modo, dificultad, jugadores…).
+  Aparece solo en la lista y se administra como los demás.
+- [Sebastián] Solo deja combinar lo que es compatible: plugins solo en Paper, mods del mismo cargador,
+  nada de mods solo para el juego, modpacks de la misma versión y cargador, y no abre un mundo de una
+  versión más nueva. Si algo falla o se cancela, no queda nada a medias.
+- [Sebastián] Cada servidor nuevo usa el Java que pide su versión (si falta, dice cuál instalar).
+- [Sebastián] En los servidores Fabric y Forge, la pestaña de plugins pasa a ser de mods (con actualización
+  desde Modrinth), e «Instalar» le pone a cada servidor marcado la versión que le sirve.
+- Las consultas a Modrinth, Fabric y Forge son más rápidas (antes podían tardar varios segundos por pedido).
+
 ## 4.13.1 (23/11/2026)
 - [Sebastián] Panel de Minecraft: los grupos de servidores se despliegan al tocarlos (arrancan cerrados, salvo
   el que tenga uno encendido) y muestran cuántos servidores tienen y cuántos están encendidos.
