@@ -5,7 +5,7 @@
 # Datos del paquete: nombre, versión del programa (pkgver) y número de compilación
 # de esa misma versión (pkgrel)
 pkgname=Arch-Linux-Manager
-pkgver=4.16.0
+pkgver=4.17.0
 pkgrel=1
 pkgdesc="A useful set of GUI scripts for Arch Linux"
 # Ya no es «any»: la ventana Qt (gui/) se compila para cada procesador
@@ -31,8 +31,6 @@ depends=(
     'python-mutagen'
     # reproducir videos (tutoriales y descargas)
     'mpv'
-    # terminal para Actualizar Arch, App, Playit y los servidores de Minecraft
-    'konsole'
     # consola compartida de los servidores de Minecraft (siguen prendidos aunque se cierre la terminal)
     'tmux'
     # descargas
@@ -54,6 +52,9 @@ makedepends=('cmake' 'ninja')
 # Opcional: sin Tailscale los respaldos solo funcionan dentro de la red de casa
 optdepends=(
     'tailscale: Para los respaldos fuera de la red local'
+    # Actualizar Arch, Apps del AUR, Playit y las consolas de Minecraft se abren en una terminal: konsole
+    # si está; si no, $TERMINAL, xdg-terminal-exec, kgx, gnome-terminal, alacritty, kitty o xterm (Common/Terminal.sh)
+    'konsole: Terminal preferida (sin ella se usa otra que esté instalada)'
     'android-tools: Sección Android (Celular: Apps FOSS y Debloat)'
     'waydroid: Opción Cerrar-Waydroid'
     'steam: Opción Steam Proton'

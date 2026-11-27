@@ -1,7 +1,7 @@
 #!/bin/bash
 # Actualiza todo el sistema con pacman. -Syyuu: refresca las bases de datos aunque estén al día
 # y actualiza, permitiendo bajar de versión si hace falta.
-# La ventana principal lo abre dentro de konsole (pacman puede hacer preguntas, como
+# La ventana principal lo abre en una terminal, konsole u otra (pacman puede hacer preguntas, como
 # conflictos o qué paquete elegir, y en una terminal se contestan).
 # Al final actualiza también las apps del AUR de este equipo que ya estén instaladas y tengan
 # versión nueva (Logica/AUR.sh y General/AUR-instalar.sh); no instala apps nuevas.

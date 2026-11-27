@@ -15,6 +15,7 @@
 #include "PaginaNotificacion.h"
 #include "PaginaTutoriales.h"
 #include "ProcesoLogica.h"
+#include "Terminal.h"
 
 #include <QCloseEvent>
 #include <QDir>
@@ -404,16 +405,25 @@ void VentanaPrincipal::lanzar(const Accion &accion)
         return;
     }
 
-    // Lo que necesita terminal (Actualizar Arch) y otros programas (Playit)
+    // Lo que necesita terminal (Actualizar Arch, Playit) y otros programas
     QProcess proceso;
     proceso.setProcessEnvironment(entornoScripts());
     proceso.setWorkingDirectory(QDir::homePath());
     const QString ruta = QDir(base).filePath(accion.destino);
     switch (accion.tipo) {
-    case TipoAccion::Terminal:
-        proceso.setProgram(QStringLiteral("konsole"));
-        proceso.setArguments({QStringLiteral("-e"), QStringLiteral("bash"), ruta});
+    case TipoAccion::Terminal: {
+        // konsole si está; si no, otra terminal (Common/Terminal.sh)
+        if (terminal::disponible(base).isEmpty()) {
+            avisar(terminal::sinTerminal(), tema::Estado::Error);
+            return;
+        }
+        // Un script de Resources (destino) o, sin destino, un programa con sus argumentos (Playit)
+        const QStringList comando = accion.destino.isEmpty() ? accion.argumentos
+                                                             : QStringList{QStringLiteral("bash"), ruta} + accion.argumentos;
+        proceso.setProgram(QStringLiteral("bash"));
+        proceso.setArguments(terminal::argumentos(base, comando));
         break;
+    }
     case TipoAccion::Programa:
         proceso.setProgram(accion.destino);
         proceso.setArguments(accion.argumentos);

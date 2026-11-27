@@ -1,6 +1,6 @@
 // Página «Apps del AUR»: las apps del AUR de esta computadora (Claude, Equibop, Heroic, Linux
 // Command Library; cuáles según el equipo, ver Common/AUR.sh), con la versión instalada y la del
-// AUR. Instalar y actualizar se hace en konsole con General/AUR-instalar.sh (makepkg pide la
+// AUR. Instalar y actualizar se hace en una terminal (konsole u otra, ver Terminal.h) con General/AUR-instalar.sh (makepkg pide la
 // contraseña); al cerrarse la terminal se vuelven a consultar las versiones. Sin yay ni paru.
 
 #pragma once

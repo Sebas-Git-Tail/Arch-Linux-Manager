@@ -624,6 +624,354 @@ instalar playit-bin; igual "en otra PC rechaza Playit" "$?" "2"
 instalar; igual "AUR-instalar sin paquetes sale con 2" "$?" "2"
 unset MANAGER_MAC_PRUEBA AUR_RPC_FALSA
 
+echo "Terminal.sh (terminales falsas: no abre nada)"
+FT="$TMP/terminales"; mkdir -p "$FT"
+for t in xterm mi-terminal; do
+    printf '#!/bin/bash\nprintf "%%s|" "$(basename "$0")" "$@" > "%s/abierta"\n' "$FT" > "$FT/$t"; chmod +x "$FT/$t"
+done
+TERM_SH() { PATH="$FT:$PATH" bash "$COMMON/Terminal.sh" "$@"; }
+igual "elige la primera que está instalada" "$(TERMINAL_CANDIDATAS="no-existe xterm" TERM_SH --cual)" "xterm"
+TERMINAL_CANDIDATAS="no-existe xterm" TERM_SH --titulo "Mi título" -- echo "hola mundo"
+igual "xterm: título y comando con -e" "$(cat "$FT/abierta")" "xterm|-T|Mi título|-e|echo|hola mundo|"
+TERMINAL_CANDIDATAS='$TERMINAL xterm' TERMINAL="mi-terminal --oscura" TERM_SH -- bash script.sh
+igual "usa \$TERMINAL (con sus opciones) antes que las otras" "$(cat "$FT/abierta")" "mi-terminal|--oscura|-e|bash|script.sh|"
+igual "\$TERMINAL que no existe se saltea" "$(TERMINAL_CANDIDATAS='$TERMINAL xterm' TERMINAL="no-existe" TERM_SH --cual)" "xterm"
+TERMINAL_CANDIDATAS="no-existe" TERM_SH --cual > /dev/null 2>&1; igual "sin ninguna terminal sale con 127" "$?" "127"
+TERMINAL_CANDIDATAS="xterm" TERM_SH > /dev/null 2>&1; igual "sin comando sale con 2" "$?" "2"
+grep -q '"konsole"' "$RAIZ/gui/VentanaPrincipal.cpp" "$RAIZ/gui/PaginaAUR.cpp" "$RAIZ/gui/Acciones.cpp" \
+    && mal "la ventana todavía llama a konsole directo" || ok "la ventana no llama a konsole directo"
+grep -q 'setsid -f konsole' "$LOGICA/Minecraft.sh" && mal "Minecraft.sh todavía llama a konsole directo" || ok "Minecraft.sh usa Terminal.sh"
+grep -q "^ *'konsole'$" "$RAIZ/PKGBUILD" && mal "konsole sigue en depends" || ok "konsole pasó a optdepends"
+grep -rq 'SEBASTIAN' "$RAIZ/gui" "$RAIZ/Arch-Linux-Manager.sh" "$RES" && mal "queda la variable SEBASTIAN" || ok "ya no se exporta SEBASTIAN (la carpeta no existe)"
+
+# wget falso para las descargas (no toca la red)
+FW="$TMP/wget-falso"; mkdir -p "$FW"
+cat > "$FW/wget" <<'SH'
+#!/bin/bash
+# wget falso: -O ARCHIVO URL. Con un archivo igual en $WGET_FIJOS lo copia; «falla» en la URL deja un
+# archivo a medias y falla; si no, escribe «contenido URL»
+salida="" url=""
+while (( $# )); do case "$1" in -O) salida=$2; shift ;; --|-*) ;; *) url=$1 ;; esac; shift; done
+echo "    0K .......... 50% 1M"
+if [[ -n "${WGET_FIJOS:-}" && -f "$WGET_FIJOS/$(basename "$url")" ]]; then cp "$WGET_FIJOS/$(basename "$url")" "$salida"
+elif [[ -n "${WGET_FIJOS:-}" || "$url" == *falla* ]]; then echo "a medias" > "$salida"; exit 4
+else printf 'contenido %s\n' "$url" > "$salida"; fi
+echo "   10K .......... 100% 1M"
+SH
+chmod +x "$FW/wget"
+
+echo "Descargas-en-masa.sh (wget falso)"
+D="$TMP/masa"; mkdir -p "$D"; echo viejo > "$D/a.txt"; echo viejo > "$D/p.tar.gz"
+MASA() { PATH="$FW:$PATH" bash "$LOGICA/Descargas-en-masa.sh" --destino "$D" -- "$@"; }
+salida=$(MASA "http://x/a.txt" "http://x/a.txt?v=2" "http://x/p.tar.gz" "http://x/sin-extension")
+igual "no pisa el que ya estaba" "$(cat "$D/a.txt")" "viejo"
+igual "el nuevo va a «nombre (2).ext»" "$(cat "$D/a (2).txt" 2>/dev/null)" "contenido http://x/a.txt"
+igual "el siguiente a «nombre (3).ext»" "$(cat "$D/a (3).txt" 2>/dev/null)" "contenido http://x/a.txt?v=2"
+[[ -f "$D/p (2).tar.gz" ]] && ok ".tar.gz queda junto: «p (2).tar.gz»" || mal ".tar.gz" "$(ls "$D")"
+[[ -f "$D/sin-extension" ]] && ok "sin extensión" || mal "sin extensión"
+grep -qx "LISTO $D/a (2).txt" <<< "$salida" && ok "LISTO dice el nombre final" || mal "LISTO con el nombre final" "$salida"
+salida=$(MASA "http://x/a.txt?falla"); codigo=$?
+igual "si falla sale con 1" "$codigo" "1"
+igual "si falla no borra el archivo que ya estaba" "$(cat "$D/a.txt")" "viejo"
+[[ ! -e "$D/a (4).txt" ]] && ok "si falla no deja el archivo a medias" || mal "deja el archivo a medias"
+compgen -G "$D/.descarga-*" > /dev/null && mal "quedó un temporal .descarga-*" || ok "no quedan temporales"
+igual "no deja archivos de más" "$(ls -A "$D" | wc -l)" "6"
+
+echo "Descargar.sh (yt-dlp falso)"
+FY="$TMP/ytdlp-falso"; mkdir -p "$FY"
+cat > "$FY/yt-dlp" <<'SH'
+#!/bin/bash
+printf '%s\n' "$@" > "$YTDLP_ARGS"
+for a in "$@"; do [[ "$a" == -J ]] && { cat "$YTDLP_JSON"; exit 0; }; done
+rutas="" destino="." url=""
+while (( $# )); do
+    case "$1" in --print-to-file) rutas=$3; shift 2 ;; -P) destino=$2; shift ;; --) url=$2; break ;; esac; shift
+done
+[[ "$url" == *falla* ]] && { echo "ERROR: [youtube] abc: Video no disponible"; exit 1; }
+mkdir -p "$destino/Canal"; echo video > "$destino/Canal/Titulo.mkv"
+echo "[download] Destination: $destino/Canal/Titulo.mkv"
+echo "[download]  50.0% of 10.00MiB at 1.00MiB/s"
+echo "[download] 100% of 10.00MiB"
+echo "$destino/Canal/Titulo.mkv" >> "$rutas"
+SH
+chmod +x "$FY/yt-dlp"
+export YTDLP_ARGS="$TMP/ytdlp-args" YTDLP_JSON="$TMP/ytdlp.json"
+DESC() { PATH="$FY:$PATH" bash "$LOGICA/Descargar.sh" "$@"; }
+DESC --destino "$TMP/videos" > /dev/null; igual "sin URL sale con 2" "$?" "2"
+DESC --destino "$TMP/videos" --audios 'es;rm' -- http://v/1 > /dev/null; igual "rechaza un idioma raro" "$?" "2"
+DESC --destino "$TMP/videos" --audio --calidad 720 -- http://v/1 > /dev/null; igual "--audio con --calidad sale con 2" "$?" "2"
+DESC --destino "$TMP/videos" --vcodec mpeg -- http://v/1 > /dev/null; igual "rechaza un códec desconocido" "$?" "2"
+salida=$(DESC --destino "$TMP/videos" -- http://v/1); codigo=$?
+igual "baja y sale con 0" "$codigo" "0"
+grep -qx "LISTO $TMP/videos/Canal/Titulo.mkv" <<< "$salida" && ok "LISTO con la ruta final" || mal "LISTO" "$salida"
+grep -qx "PROGRESO 50" <<< "$salida" && ok "informa el progreso" || mal "progreso" "$salida"
+grep -qx "ARCHIVO Titulo.mkv" <<< "$salida" && ok "informa el archivo" || mal "archivo" "$salida"
+grep -qx -- "--remux-video" "$YTDLP_ARGS" && ok "los videos salen en MKV" || mal "MKV"
+DESC --destino "$TMP/videos" --calidad 720 --vcodec av1 -- http://v/1 > /dev/null
+grep -qxF 'bv[height<=720][vcodec^=av01]+ba/b[height<=720][vcodec^=av01]/bv[height<=720]+ba/b[height<=720]/bv*+ba/b' "$YTDLP_ARGS" \
+    && ok "selector de calidad y códec" || mal "selector" "$(grep -A1 -x -- -f "$YTDLP_ARGS" | tail -1)"
+DESC --destino "$TMP/musica" --audio -- http://v/1 > /dev/null
+grep -qx -- "-x" "$YTDLP_ARGS" && ok "--audio extrae el audio" || mal "--audio"
+salida=$(DESC --destino "$TMP/videos" -- http://v/falla); codigo=$?
+igual "si falla sale con 1" "$codigo" "1"
+grep -qx "FALLO \[youtube\] abc: Video no disponible" <<< "$salida" && ok "FALLO con el error de yt-dlp" || mal "FALLO" "$salida"
+cat > "$YTDLP_JSON" <<'EOF'
+{"formats": [{"vcodec": "none", "acodec": "opus", "language": "es", "language_preference": 10},
+ {"vcodec": "none", "acodec": "mp4a.40.2", "language": "en"},
+ {"vcodec": "av01.0.08M.08", "acodec": "none", "height": 1080},
+ {"vcodec": "avc1.640028", "acodec": "none", "height": 720}],
+ "subtitles": {"es": [{"name": "Español"}]},
+ "automatic_captions": {"es": [{}], "en": [{"name": "English"}], "live_chat": [{}]}}
+EOF
+pistas=$(DESC --pistas -- http://v/1 | grep -v '^INICIO' | sort | tr '\n' '|')
+igual "--pistas: audios, códecs, calidades y subtítulos" "$pistas" "ACODEC aac|ACODEC opus|AUDIO en OTRA|AUDIO es ORIGINAL|SUBTITULO en AUTO English|SUBTITULO es MANUAL Español|VIDEO 1080 av1|VIDEO 720 h264|"
+unset YTDLP_ARGS YTDLP_JSON
+
+echo "Steam-Proton.sh (GitHub falso)"
+ARQ=$(uname -m)
+SF="$TMP/steam-fijos"; mkdir -p "$SF/arma"
+for v in 1 2 3; do
+    mkdir -p "$SF/arma/GE-Proton10-$v"; echo "$v" > "$SF/arma/GE-Proton10-$v/version"
+    tar -czf "$SF/GE-Proton10-$v-$ARQ.tar.gz" -C "$SF/arma" "GE-Proton10-$v"
+done
+(cd "$SF" && sha512sum "GE-Proton10-1-$ARQ.tar.gz" > "GE-Proton10-1-$ARQ.sha512sum")     # la 2 no publica suma
+printf '%0128d  GE-Proton10-3-%s.tar.gz\n' 0 "$ARQ" > "$SF/GE-Proton10-3-$ARQ.sha512sum"     # la 3, una suma que no coincide
+printf '{"assets": [{"browser_download_url": "https://github.com/x/GE-Proton10-1-aarch64.tar.gz"},\n {"browser_download_url": "https://github.com/x/GE-Proton10-1-%s.tar.gz"}]}\n' "$ARQ" > "$SF/api.json"
+FC="$TMP/curl-steam"; mkdir -p "$FC"
+cat > "$FC/curl" <<'SH'
+#!/bin/bash
+salida="" url=""
+while (( $# )); do case "$1" in -o) salida=$2; shift ;; -m) shift ;; -*) ;; *) url=$1 ;; esac; shift; done
+f="$WGET_FIJOS/$(basename "$url")"; [[ "$url" == *api.github.com* ]] && f="$WGET_FIJOS/api.json"
+[[ -f "$f" ]] || exit 22
+if [[ -n "$salida" ]]; then cp "$f" "$salida"; else cat "$f"; fi
+SH
+chmod +x "$FC/curl"
+STEAM() { WGET_FIJOS="$SF" PATH="$FC:$FW:$PATH" bash "$LOGICA/Steam-Proton.sh" "$@"; }
+URL1="https://github.com/x/GE-Proton10-1-$ARQ.tar.gz"
+igual "ultima: la de esta arquitectura" "$(STEAM ultima | grep '^ULTIMA')" "ULTIMA GE-Proton10-1-$ARQ $URL1"
+STEAM instalar "http://x/a.tar.gz" > /dev/null; igual "rechaza una URL que no es https" "$?" "2"
+salida=$(STEAM instalar "$URL1"); codigo=$?
+igual "instala con la suma correcta" "$codigo|$(grep '^LISTO' <<< "$salida")" "0|LISTO GE-Proton10-1"
+grep -q 'Suma SHA-512 correcta' <<< "$salida" && ok "verifica la suma" || mal "verifica la suma" "$salida"
+STEAMDIR="$HOME/.local/share/Steam/compatibilitytools.d"
+igual "instaladas" "$(STEAM instaladas | grep '^INSTALADA')" "INSTALADA GE-Proton10-1"
+salida=$(STEAM instalar "https://github.com/x/GE-Proton10-2-$ARQ.tar.gz"); codigo=$?
+igual "sin suma SHA-512 no instala (código 3)" "$codigo" "3"
+grep -qx "SIN_SUMA GE-Proton10-2-$ARQ.tar.gz" <<< "$salida" && ok "avisa SIN_SUMA" || mal "SIN_SUMA" "$salida"
+[[ -d "$STEAMDIR/GE-Proton10-1" && ! -d "$STEAMDIR/GE-Proton10-2" ]] && ok "sin suma deja la instalada como estaba" || mal "sin suma tocó lo instalado"
+salida=$(STEAM instalar "https://github.com/x/GE-Proton10-2-$ARQ.tar.gz" --sin-suma); codigo=$?
+[[ $codigo == 0 && -d "$STEAMDIR/GE-Proton10-2" && ! -d "$STEAMDIR/GE-Proton10-1" ]] && ok "con --sin-suma (confirmado) instala y quita la anterior" || mal "--sin-suma" "$salida"
+salida=$(STEAM instalar "https://github.com/x/GE-Proton10-3-$ARQ.tar.gz"); codigo=$?
+igual "suma que no coincide: sale con 1" "$codigo" "1"
+[[ -d "$STEAMDIR/GE-Proton10-2" && ! -d "$STEAMDIR/GE-Proton10-3" ]] && ok "descarga dañada: no toca lo instalado" || mal "descarga dañada tocó lo instalado"
+
+echo "Tutoriales.sh (sin red: puertos y curl falsos)"
+FTU="$TMP/curl-tutoriales"; mkdir -p "$FTU"
+cat > "$FTU/curl" <<'SH'
+#!/bin/bash
+[[ -n "${TUT_FALLA:-}" ]] && exit 7
+echo '<a href="KDEConnect.mkv">K</a> <a href="Impresora.mkv">I</a> <a href="nota.txt">n</a>'
+SH
+chmod +x "$FTU/curl"
+TUT() { PATH="$FTU:$PATH" bash "$LOGICA/Tutoriales.sh"; }
+salida=$(SERVIDOR_PRUEBA_PUERTOS="" TUT); codigo=$?
+igual "sin servidor sale con 2" "$codigo" "2"
+grep -q '^ERROR No hay conexión con el servidor' <<< "$salida" && ok "sin servidor: mensaje claro" || mal "mensaje sin servidor" "$salida"
+grep -q 'se cayó el sistema' "$LOGICA/Tutoriales.sh" && mal "queda «se cayó el sistema»" || ok "ya no dice «se cayó el sistema»"
+export SERVIDOR_PRUEBA_PUERTOS="192.168.100.14:8080"
+igual "otra PC: solo el de KDE Connect" "$(MANAGER_MAC_PRUEBA="aa:bb:cc:dd:ee:ff" TUT | tr '\n' '|')" "VIDEO KDEConnect http://192.168.100.14:8080/Scripts/General/Tutoriales/KDEConnect.mkv|"
+igual "PC de mamá: todos los videos" "$(MANAGER_MAC_PRUEBA="18:c0:4d:a2:fe:e0" TUT | cut -d' ' -f2 | tr '\n' ' ')" "KDEConnect Impresora "
+salida=$(TUT_FALLA=1 TUT)
+grep -q '^ERROR El servidor contestó, pero no se pudo leer' <<< "$salida" && ok "servidor sin lista: otro mensaje" || mal "servidor sin lista" "$salida"
+igual "fuera de casa usa Tailscale" "$(SERVIDOR_PRUEBA_PUERTOS="archlinux.tail0dedb3.ts.net:443" MANAGER_MAC_PRUEBA="aa:bb:cc:dd:ee:ff" TUT | head -1 | cut -d' ' -f3)" "https://archlinux.tail0dedb3.ts.net/Scripts/General/Tutoriales/KDEConnect.mkv"
+unset SERVIDOR_PRUEBA_PUERTOS
+
+echo "Acciones-servidor.sh (ssh falso)"
+FS="$TMP/ssh-acciones"; mkdir -p "$FS"
+cat > "$FS/ssh" <<'SH'
+#!/bin/bash
+printf '%s\n' "$@" > "$SSH_ARGS"
+case "$SSH_MODO" in
+    ok) echo "Generando miniaturas..."; echo ""; echo "Listo: 3 miniaturas nuevas." ;;
+    denegado) echo "sebastian@100.101.213.44: Permission denied (publickey)." >&2; exit 255 ;;
+    caido) echo "ssh: connect to host x port 22: Connection refused" >&2; exit 255 ;;
+    falla) echo "algo salió mal"; exit 3 ;;
+esac
+SH
+printf '#!/bin/bash\ncat > "%s/portapapeles"\n' "$FS" > "$FS/wl-copy"; chmod +x "$FS/ssh" "$FS/wl-copy"
+export SSH_ARGS="$TMP/ssh-args"
+ACC() { PATH="$FS:$PATH" SERVIDOR_PRUEBA_PUERTOS="192.168.100.14:22" bash "$LOGICA/Acciones-servidor.sh" "$@"; }
+ACC "rm -rf" > /dev/null; igual "acción desconocida sale con 2" "$?" "2"
+salida=$(SSH_MODO=ok ACC miniaturas-bodrio); codigo=$?
+igual "bien: sale con 0" "$codigo" "0"
+igual "bien: LISTO con la última línea" "$(grep '^LISTO' <<< "$salida")" "LISTO Listo: 3 miniaturas nuevas."
+grep -qx "LINEA Generando miniaturas..." <<< "$salida" && ok "va mostrando lo que dice el servidor" || mal "LINEA" "$salida"
+[[ -f "$HOME/.ssh/arch-linux-manager-servidor" && -f "$HOME/.ssh/arch-linux-manager-servidor.pub" ]] && ok "crea la clave de este equipo" || mal "no creó la clave"
+igual "manda solo el nombre de la acción" "$(tail -1 "$SSH_ARGS")" "miniaturas-bodrio"
+grep -qx 'BatchMode=yes' "$SSH_ARGS" && grep -qx 'IdentitiesOnly=yes' "$SSH_ARGS" && ok "nunca pide contraseña y usa solo esa clave" || mal "opciones de ssh"
+grep -qx 'HostKeyAlias=servidor-respaldos' "$SSH_ARGS" && ok "exige la huella del servidor" || mal "huella"
+salida=$(SSH_MODO=denegado ACC descargas); codigo=$?
+igual "sin autorizar sale con 2" "$codigo" "2"
+grep -q 'todavía no está autorizado' <<< "$salida" && ok "sin autorizar: lo explica" || mal "sin autorizar" "$salida"
+igual "sin autorizar: copia la clave pública" "$(cat "$FS/portapapeles" 2>/dev/null)" "$(cat "$HOME/.ssh/arch-linux-manager-servidor.pub")"
+salida=$(SSH_MODO=caido ACC descargas); igual "servidor caído sale con 1" "$?|$(grep '^ERROR' <<< "$salida")" "1|ERROR No se pudo conectar con el servidor."
+salida=$(SSH_MODO=falla ACC descargas); igual "la acción falla en el servidor" "$?|$(grep '^ERROR' <<< "$salida")" "1|ERROR El servidor no pudo terminar (código 3)."
+PATH="$FS:$PATH" SERVIDOR_PRUEBA_PUERTOS="" bash "$LOGICA/Acciones-servidor.sh" descargas > /dev/null; igual "sin servidor sale con 1" "$?" "1"
+unset SSH_ARGS
+
+echo "Android.sh (adb falso)"
+AD="$TMP/adb"; mkdir -p "$AD/bin"; export ADB_DIR="$AD"
+cat > "$AD/bin/adb" <<'SH'
+#!/bin/bash
+# adb falso: un celular (CEL1, usuarios 0 y 10) y otro sin autorizar. Las apps de cada usuario están
+# en $ADB_DIR/inst-<usuario> y todas las del sistema en $ADB_DIR/todos.
+echo "$*" >> "$ADB_DIR/log"
+[[ "$1" == -s ]] && shift 2
+case "$1" in
+    devices) printf 'List of devices attached\nCEL1\tdevice\nCEL2\tunauthorized\n\n'; exit 0 ;;
+    get-state) echo device; exit 0 ;;
+    shell) shift ;;
+    *) exit 1 ;;
+esac
+reinstalar() {   # $1 usuario, $2 paquete
+    if grep -qx "$2" "$ADB_DIR/todos"; then
+        grep -qx "$2" "$ADB_DIR/inst-$1" || echo "$2" >> "$ADB_DIR/inst-$1"
+        printf 'Package %s installed for user: %s\r\n' "$2" "$1"
+    else
+        printf 'Error: package %s does not exist\r\n' "$2"
+    fi
+}
+case "$1 $2" in
+    "getprop ro.product.brand") printf 'motorola\r\n' ;;
+    "getprop ro.product.model") printf 'moto g\r\n' ;;
+    "pm list")
+        if [[ "$3" == users ]]; then printf 'Users:\r\n\tUserInfo{0:Dueño:c13} running\r\n\tUserInfo{10:Segundo espacio:410}\r\n'; exit 0; fi
+        shift 3; lista="inst-$2"; [[ "$1" == -u ]] && lista=todos
+        sed 's/^/package:/; s/$/\r/' "$ADB_DIR/$lista" ;;
+    "pm uninstall")
+        if grep -qx "$5" "$ADB_DIR/inst-$4"; then grep -vx "$5" "$ADB_DIR/inst-$4" > "$ADB_DIR/tmp"; mv "$ADB_DIR/tmp" "$ADB_DIR/inst-$4"; printf 'Success\r\n'
+        else printf 'Failure [not installed for %s]\r\n' "$4"; fi ;;
+    "cmd package")
+        [[ -n "${ADB_VIEJO:-}" ]] && { echo "cmd: Can't find service: package"; exit 0; }
+        reinstalar "$5" "$6" ;;
+    "pm install-existing") reinstalar "$4" "$5" ;;
+esac
+SH
+chmod +x "$AD/bin/adb"
+P=$(bash -c 'source "$1"; printf "%s" "${recommended[0]}"' _ "$LOGICA/Debloat-listas.sh")
+printf '%s\n' "$P" com.ejemplo.otra com.whatsapp > "$AD/todos"
+printf '%s\n' "$P" com.whatsapp > "$AD/inst-0"
+printf '%s\n' "$P" com.ejemplo.otra com.whatsapp > "$AD/inst-10"
+AND() { PATH="$AD/bin:$PATH" bash "$LOGICA/Android.sh" "$@"; }
+igual "dispositivos: celulares, usuarios y los sin autorizar" "$(AND dispositivos | tr '\n' '|')" "DISPOSITIVO CEL1 motorola moto g|USUARIO CEL1 0 Dueño|USUARIO CEL1 10 Segundo espacio|NOAUTORIZADO CEL2|"
+salida=$(AND debloat --serial CEL1 --nivel basico --usuario 10)
+grep -qx "DESINSTALADO $P 10" <<< "$salida" && ok "debloat quita la app del usuario elegido" || mal "debloat" "$(tail -2 <<< "$salida")"
+grep -qx "$P" "$AD/inst-0" && ok "debloat no toca a los otros usuarios" || mal "debloat tocó al usuario 0"
+igual "quitadas del usuario 10: la del debloat" "$(AND quitadas --serial CEL1 --usuario 10 | grep '^QUITADA' | tr '\n' '|')" "QUITADA $P 10 LISTA|"
+igual "quitadas de todos: marca las que no son del debloat" "$(AND quitadas --serial CEL1 | grep '^QUITADA' | tr '\n' '|')" "QUITADA com.ejemplo.otra 0 OTRA|QUITADA $P 10 LISTA|"
+AND quitadas --serial CEL1 --usuario 7 > /dev/null; igual "quitadas: usuario que no existe sale con 2" "$?" "2"
+salida=$(AND reinstalar --serial CEL1 "10:$P"); codigo=$?
+igual "reinstalar: vuelve a instalarla" "$codigo|$(grep '^REINSTALADA' <<< "$salida")" "0|REINSTALADA $P 10"
+grep -q "shell cmd package install-existing --user 10 $P" "$AD/log" && ok "usa cmd package install-existing --user" || mal "comando de reinstalar"
+igual "reinstalar: ya no figura como quitada" "$(AND quitadas --serial CEL1 --usuario 10 | grep -c '^QUITADA')" "0"
+salida=$(ADB_VIEJO=1 AND reinstalar --serial CEL1 0:com.ejemplo.otra)
+grep -qx "REINSTALADA com.ejemplo.otra 0" <<< "$salida" && grep -q "shell pm install-existing --user 0 com.ejemplo.otra" "$AD/log" \
+    && ok "Android viejo: prueba con pm install-existing" || mal "pm install-existing" "$salida"
+salida=$(AND reinstalar --serial CEL1 '10:com.x;reboot' 99:com.whatsapp 0:com.no.existe); codigo=$?
+igual "reinstalar: rechaza lo raro y sale con 1" "$codigo|$(grep -c '^FALLO' <<< "$salida")" "1|3"
+grep -q 'reboot' "$AD/log" && mal "un nombre raro llegó al celular" || ok "un nombre raro no llega al celular"
+AND reinstalar --serial CEL1 > /dev/null; igual "reinstalar sin apps sale con 2" "$?" "2"
+AND reinstalar --serial CEL1 --nivel x > /dev/null 2>&1; igual "opción desconocida sale con 2" "$?" "2"
+unset ADB_DIR
+
+echo "Respaldo.sh con un servidor falso (ssh y sshpass locales: copias anteriores y restaurar)"
+if command -v rsync &> /dev/null; then
+    FR="$TMP/respaldo-falso"; SRV="$TMP/srv"; HR="$TMP/home-respaldo"; mkdir -p "$FR" "$SRV" "$HR"
+    cat > "$FR/sshpass" <<'SH'
+#!/bin/bash
+[[ "$1" == -e ]] && shift
+[[ "${SSHPASS:-}" == "$RESPALDO_CLAVE" ]] || exit 5
+exec "$@"
+SH
+    # ssh falso: corre el comando acá mismo (rsync --server, bash -s o true), como si fuera el servidor
+    cat > "$FR/ssh" <<'SH'
+#!/bin/bash
+while (( $# )); do case "$1" in -o|-i|-p|-l|-F) shift 2 ;; -*) shift ;; *) shift; break ;; esac; done
+exec bash -c "$*"
+SH
+    chmod +x "$FR/sshpass" "$FR/ssh"
+    printf '{"version": 1, "respaldos": "%s"}\n' "$SRV" > "$cache"
+    U=$(whoami); DL="$SRV/$U/Linux"; AN="$SRV/$U/Linux.anteriores"
+    mkdir -p "$SRV/$U" "$SRV/sebastian" "$SRV/carina/Windows"    # (en el servidor ya existen)
+    # (los cambios cambian el tamaño: rsync compara tamaño y hora, y todo pasa en el mismo segundo)
+    RESP() { printf '%s\n' "${CLAVE:-clave}" | HOME="$HR" PATH="$FR:$PATH" RESPALDO_CLAVE=clave SERVIDOR_PRUEBA_PUERTOS="192.168.100.14:22" \
+                 MANAGER_MAC_PRUEBA="aa:bb:cc:dd:ee:ff" bash "$LOGICA/Respaldo.sh" "$@"; }
+    CLAVE=otra RESP linux > /dev/null; igual "contraseña incorrecta sale con 3" "$?" "3"
+    echo uno > "$HR/a.txt"; mkdir -p "$HR/dir"; echo b > "$HR/dir/b.txt"; echo c > "$HR/dir/c.txt"
+    salida=$(RESP linux); codigo=$?
+    igual "primer respaldo" "$codigo|$(cat "$DL/a.txt" 2>/dev/null)" "0|uno"
+    grep -qx "ANTERIORES 0" <<< "$salida" && ok "primer respaldo: nada a «anteriores»" || mal "ANTERIORES 0" "$salida"
+    echo segunda > "$HR/a.txt"; rm "$HR/dir/b.txt"
+    salida=$(RESP linux)
+    F=$(ls "$AN" 2>/dev/null | head -1)
+    [[ "$F" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}_[0-9]{2}-[0-9]{2}$ ]] && ok "copia anterior con fecha, al lado del destino (Linux.anteriores/$F)" || mal "carpeta de anteriores" "$(ls -R "$SRV" | head)"
+    igual "el espejo sigue como antes (borra y actualiza)" "$(cat "$DL/a.txt")|$([[ -e "$DL/dir/b.txt" ]] && echo está || echo borrado)" "segunda|borrado"
+    igual "lo pisado quedó en anteriores" "$(cat "$AN/$F/a.txt" 2>/dev/null)" "uno"
+    igual "lo borrado quedó en anteriores" "$(cat "$AN/$F/dir/b.txt" 2>/dev/null)" "b"
+    [[ ! -e "$AN/$F/dir/c.txt" ]] && ok "lo que no cambió no va a anteriores" || mal "c.txt en anteriores"
+    grep -qx "ANTERIORES 2" <<< "$salida" && ok "cuenta cuántos fueron a anteriores" || mal "ANTERIORES 2" "$(grep -i anterior <<< "$salida")"
+    grep -q '^LISTO Respaldo completado. 2 archivo(s) borrados o cambiados quedaron en «anteriores».' <<< "$salida" && ok "el resumen lo dice" || mal "resumen" "$(grep LISTO <<< "$salida")"
+    mkdir -p "$AN/2020-01-01_00-00" "$AN/otra-cosa"; echo x > "$AN/2020-01-01_00-00/viejo"; echo x > "$AN/otra-cosa/x"
+    RESP linux > /dev/null
+    [[ ! -e "$AN/2020-01-01_00-00" ]] && ok "borra las copias de más de 30 días" || mal "no borró la copia vieja"
+    [[ -e "$AN/otra-cosa/x" && -e "$AN/$F/a.txt" ]] && ok "no borra lo que no es una copia vieja" || mal "borró de más"
+    [[ ! -e "$DL/Linux.anteriores" && ! -e "$DL/.anteriores" ]] && ok "anteriores queda afuera de lo que limpia --delete" || mal "anteriores adentro del destino"
+    lineas=$(wc -l < "$historial")
+    igual "anteriores: lista las copias" "$(RESP anteriores | grep '^ANTERIOR ')" "ANTERIOR $F 2"
+    igual "anteriores: no se anota en el historial" "$(wc -l < "$historial")" "$lineas"
+    # Restaurar: nunca borra nada local y guarda lo que reemplaza
+    echo local > "$HR/a.txt"; echo propio > "$HR/solo-aca.txt"
+    salida=$(RESP restauracion --ruta dir/b.txt --desde "$F"); codigo=$?
+    igual "restaurar un archivo desde una copia anterior" "$codigo|$(cat "$HR/dir/b.txt" 2>/dev/null)" "0|b"
+    igual "restaurar un archivo no toca los demás" "$(cat "$HR/a.txt")" "local"
+    rm -rf "$HR/dir"
+    salida=$(RESP restauracion --ruta dir/ --desde actual); codigo=$?
+    igual "restaurar una carpeta desde la copia actual" "$codigo|$(ls "$HR/dir" 2>/dev/null | tr '\n' ' ')" "0|c.txt "
+    salida=$(RESP restauracion); codigo=$?
+    igual "restaurar todo trae la versión del servidor" "$codigo|$(cat "$HR/a.txt")" "0|segunda"
+    igual "restaurar no borra lo que solo está acá" "$(cat "$HR/solo-aca.txt" 2>/dev/null)" "propio"
+    guardado=$(sed -n 's/^GUARDADOS 1 //p' <<< "$salida")
+    igual "lo reemplazado queda en antes-de-restaurar" "$(cat "$guardado/a.txt" 2>/dev/null)" "local"
+    [[ "$guardado" == "$HR/.local/share/Arch-Linux-Manager/antes-de-restaurar/"* ]] && ok "antes-de-restaurar en ~/.local/share" || mal "carpeta de guardados" "$guardado"
+    salida=$(RESP restauracion --ruta no-existe.txt); codigo=$?
+    igual "restaurar algo que no está en el respaldo sale con 1" "$codigo" "1"
+    grep -q 'No se encontró «no-existe.txt»' <<< "$salida" && ok "lo dice claro" || mal "mensaje de ruta inexistente" "$(grep ERROR <<< "$salida")"
+    RESP restauracion --ruta ../etc > /dev/null; igual "rechaza rutas con .." "$?" "2"
+    RESP restauracion --ruta /etc/passwd > /dev/null; igual "rechaza rutas absolutas" "$?" "2"
+    RESP restauracion --desde ayer > /dev/null; igual "rechaza una fecha rara" "$?" "2"
+    RESP linux --ruta a.txt > /dev/null; igual "--ruta solo para restaurar" "$?" "2"
+    # Minecraft
+    export MINECRAFT_DIR="$TMP/mc-respaldo"; mkdir -p "$MINECRAFT_DIR/Servidores"; echo v1 > "$MINECRAFT_DIR/Servidores/notas.txt"
+    RESP minecraft > /dev/null; echo v22 > "$MINECRAFT_DIR/Servidores/notas.txt"; RESP minecraft > /dev/null
+    MA="$SRV/sebastian/Minecraft.anteriores"
+    igual "Minecraft: lo pisado va a Minecraft.anteriores" "$(cat "$MA"/*/Servidores/notas.txt 2>/dev/null)|$(cat "$SRV/sebastian/Minecraft/Servidores/notas.txt" 2>/dev/null)" "v1|v22"
+    unset MINECRAFT_DIR
+    # Carina (una carpeta en vez de la partición de Windows): S.I.Ap va adentro de «Trabajo de Carina»
+    W="$TMP/windows"; mkdir -p "$W/Usuarios/Carina" "$W/Program Files (x86)/S.I.Ap"
+    echo v1 > "$W/Usuarios/Carina/doc.txt"; echo v1 > "$W/Program Files (x86)/S.I.Ap/datos.db"; echo fijo > "$W/Program Files (x86)/S.I.Ap/fijo.txt"
+    CAR() { RESPALDO_CARINA_ORIGEN="$W" RESP carina; }
+    CAR > /dev/null; TC="$SRV/carina/Windows/Trabajo de Carina"
+    igual "Carina: trabajo y S.I.Ap" "$(cat "$TC/doc.txt" "$TC/S.I.Ap/datos.db" 2>/dev/null | tr '\n' ' ')" "v1 v1 "
+    echo v22 > "$W/Usuarios/Carina/doc.txt"; echo v22 > "$W/Program Files (x86)/S.I.Ap/datos.db"
+    salida=$(CAR); CA="$SRV/carina/Windows/Trabajo de Carina.anteriores"
+    igual "Carina: lo pisado de las dos copias va a la misma carpeta anterior" "$(cat "$CA"/*/doc.txt "$CA"/*/S.I.Ap/datos.db 2>/dev/null | tr '\n' ' ')" "v1 v1 "
+    grep -qx "ANTERIORES 2" <<< "$salida" && ok "Carina: S.I.Ap ya no se borra y se copia entera cada vez" || mal "Carina: ANTERIORES" "$(grep -i anterior <<< "$salida"; ls -R "$CA" | head -20)"
+    rm -f "$cache"
+else
+    echo "  (sin rsync: se saltean)"
+fi
+
 echo
 if (( fallas == 0 )); then
     echo "Todas bien ($pruebas pruebas)."

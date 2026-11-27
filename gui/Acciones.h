@@ -28,7 +28,9 @@ struct Entorno
 
 enum class TipoAccion {
     Pagina,     // página Qt dentro de la ventana (destino = nombre de la página)
-    Terminal,   // script que necesita terminal, p. ej. por sudo (se abre con konsole)
+    Terminal,   // script de Resources que necesita terminal, p. ej. por sudo (destino), o un
+                // programa (destino vacío y el programa en argumentos). Se abre con konsole o, si
+                // no está, con otra terminal (Common/Terminal.sh)
     Programa,   // otro programa (destino = ejecutable, con sus argumentos)
     Logica,     // script de Logica/ sin página: se ejecuta y su LISTO/ERROR se ve abajo
 };

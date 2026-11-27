@@ -161,7 +161,8 @@ arrancar() {
             \; set -g status-right-length 120 \; set -g status-style "bg=#00aae4,fg=black" \
             \; set -g status-right "Cerrar esta ventana NO apaga el servidor (para apagarlo: stop) " &>/dev/null
     else
-        setsid -f konsole --workdir "$carpeta" -p tabtitle="$(nombre_visible "$1")" -e "$AQUI/Minecraft.sh" consola "$1" &>/dev/null
+        # (konsole si está, si no otra terminal: Common/Terminal.sh)
+        setsid -f bash "$COMMON/Terminal.sh" --carpeta "$carpeta" --titulo "$(nombre_visible "$1")" -- "$AQUI/Minecraft.sh" consola "$1" &>/dev/null
     fi
     # Apagado automático (ver «vigilar»)
     [[ "${MINECRAFT_VIGILAR:-1}" == 0 ]] || setsid -f bash "$AQUI/Minecraft.sh" vigilar "$1" &>/dev/null < /dev/null
@@ -199,7 +200,7 @@ guardar_mundo() {
 abrir_terminal() {
     [[ "${MINECRAFT_SIN_TERMINAL:-}" == 1 ]] && return 0
     compartida "$1" || return 0
-    setsid -f konsole -p tabtitle="$(nombre_visible "$1")" -e tmux -L "$TMUX_SOCKET" -f /dev/null attach -t "=$(sesion "$1")" &>/dev/null
+    setsid -f bash "$COMMON/Terminal.sh" --titulo "$(nombre_visible "$1")" -- tmux -L "$TMUX_SOCKET" -f /dev/null attach -t "=$(sesion "$1")" &>/dev/null
 }
 # Detiene el servidor guardando los mundos. Con SEGUNDOS > 0 (y consola compartida) primero avisa en el
 # chat y espera; si se cancela mientras espera, avisa que no se apaga. Uso: detener SERVIDOR [SEGUNDOS] [verbo]

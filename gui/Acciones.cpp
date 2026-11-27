@@ -35,7 +35,7 @@ QList<Accion> acciones()
          QObject::tr("Instala y actualiza apps que no están en los repositorios de Arch."),
          TipoAccion::Pagina, QStringLiteral("aur"), {}, siempre},
         {QStringLiteral("general"), QStringLiteral("respaldo"), QObject::tr("Respaldo-Linux"),
-         QObject::tr("Copia tu carpeta personal al servidor."),
+         QObject::tr("Copia tu carpeta personal al servidor, y trae de vuelta todo o una carpeta o archivo (también de copias anteriores)."),
          TipoAccion::Pagina, QStringLiteral("respaldo-linux"), {}, conServidor},
         {QStringLiteral("general"), QStringLiteral("restaurar"), QObject::tr("Restauración-Linux"),
          QObject::tr("Trae tu respaldo desde el servidor (solo si esta PC todavía no hizo ninguno)."),
@@ -82,9 +82,8 @@ QList<Accion> acciones()
          TipoAccion::Pagina, QStringLiteral("respaldo-minecraft"), {}, minecraft},
         {QStringLiteral("minecraft"), QStringLiteral("globo"), QObject::tr("Playit"),
          QObject::tr("Abre el túnel para que se conecten desde afuera de tu red."),
-         TipoAccion::Programa, QStringLiteral("konsole"),
-         // playit-bin (AUR) queda en /usr/bin/playit; antes era un binario suelto en Minecraft Servers
-         {QStringLiteral("-e"), QStringLiteral("playit")},
+         // En una terminal (konsole u otra). playit-bin (AUR) queda en /usr/bin/playit
+         TipoAccion::Terminal, QString(), {QStringLiteral("playit")},
          minecraft},
 
         // ── Servidor: acciones que corren en el servidor con la clave limitada de este equipo ──

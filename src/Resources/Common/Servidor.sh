@@ -92,8 +92,14 @@ responde() {
     ping -c1 -W1 "$1" &>/dev/null
 }
 
-# Verdadero si se puede abrir una conexión TCP a host:puerto (2 segundos como máximo)
+# Verdadero si se puede abrir una conexión TCP a host:puerto (2 segundos como máximo).
+# Pruebas: con SERVIDOR_PRUEBA_PUERTOS definida no se toca la red y solo están «abiertos» los
+# «host:puerto» de esa lista (separados por espacios; vacía = ninguno).
 puerto_abierto() {
+    if [[ -n "${SERVIDOR_PRUEBA_PUERTOS+definida}" ]]; then
+        [[ " $SERVIDOR_PRUEBA_PUERTOS " == *" $1:$2 "* ]]
+        return
+    fi
     timeout 2 bash -c "exec 3<>/dev/tcp/$1/$2" 2>/dev/null
 }
 

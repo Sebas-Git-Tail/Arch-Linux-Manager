@@ -8,6 +8,12 @@
 #include <QProcess>
 #include <QWidget>
 
+class QComboBox;
+class QGroupBox;
+class QLineEdit;
+class QPushButton;
+class QRadioButton;
+class QToolButton;
 namespace Ui { class PaginaRespaldo; }
 
 class PaginaRespaldo : public QWidget
@@ -34,6 +40,17 @@ private slots:
     void terminoProceso(int codigo, QProcess::ExitStatus estado);
 
 private:
+    // Lo que está corriendo: un respaldo, una restauración o la búsqueda de copias anteriores
+    enum class Operacion { Respaldo, Restauracion, Anteriores };
+
+    void iniciar(Operacion cual, const QStringList &argumentosScript);
+    bool tomarContrasena();
+    // «Restaurar desde el servidor» (solo en Respaldo-Linux): todo o una carpeta/archivo, desde la
+    // copia actual o desde una anterior
+    void armarRestaurar();
+    void elegirRuta(bool carpeta);
+    void buscarAnteriores();
+    void restaurarElegido();
     void procesarEvento(const QString &linea);
     void anotar(const QString &texto);
     void habilitarFormulario(bool habilitado);
@@ -47,4 +64,14 @@ private:
     QString encendidos;            // servidores de Minecraft encendidos (código 4)
     QString mensajeFinal;
     bool cancelado = false;
+    Operacion operacion = Operacion::Respaldo;
+
+    QGroupBox *grupoRestaurar = nullptr;
+    QRadioButton *radioTodo = nullptr;
+    QRadioButton *radioSolo = nullptr;
+    QLineEdit *editRuta = nullptr;
+    QToolButton *botonElegir = nullptr;
+    QComboBox *comboDesde = nullptr;          // «actual» o la fecha de una copia anterior
+    QPushButton *botonBuscarAnteriores = nullptr;
+    QPushButton *botonRestaurar = nullptr;
 };

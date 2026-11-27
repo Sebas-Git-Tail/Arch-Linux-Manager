@@ -3,6 +3,29 @@
 Lo que cambió en cada versión. El Manager lo muestra la primera vez que se abre una versión nueva y siempre
 desde el botón del regalito. Los cambios marcados [Sebastián] solo aparecen en sus equipos.
 
+## 4.17.0 (26/11/2026)
+- Respaldos con copias anteriores: lo que un respaldo borra o cambia en el servidor ya no se pierde. Queda
+  guardado 30 días en una copia aparte, con la fecha, y al terminar el respaldo dice cuántos archivos fueron
+  ahí. Vale para Respaldo-Linux, el trabajo de Carina y Minecraft.
+- Restaurar desde la página de Respaldo-Linux, cuando quieras (antes solo se podía en una PC que nunca había
+  hecho un respaldo): todo o solo una carpeta o un archivo, y desde el último respaldo o desde una copia
+  anterior. Siempre pregunta antes y nunca borra nada de la computadora: si reemplaza un archivo, el que
+  tenías queda guardado en ~/.local/share/Arch-Linux-Manager/antes-de-restaurar.
+- Celular: «Apps quitadas» muestra las apps que sacó el debloat y las vuelve a instalar con un clic (sin
+  descargar nada).
+- Descargas en masa: si ya hay un archivo con el mismo nombre, el nuevo se guarda como «nombre (2)» en vez de
+  pisarlo, y si una descarga falla no se borra nada que ya estuviera.
+- Steam Proton: si una versión de GE-Proton no trae su suma de verificación, no se instala sin que lo
+  aceptes.
+- Tutoriales: si no hay conexión con el servidor lo dice claro, en vez de «se cayó el sistema».
+- Actualizar Arch, Apps del AUR, Playit y las consolas de Minecraft se abren en konsole o, si no está, en
+  otra terminal que haya (konsole ya no es obligatorio).
+- Si tocás algo mientras otra tarea de la misma página sigue en curso, ahora avisa en vez de no hacer nada.
+- [Sebastián] Cancelar o cerrar ya no deja procesos colgados: si a los 3 s siguen vivos, se cortan con
+  SIGKILL (todo el grupo). Al borrar una página con algo corriendo ya no se cierra con una falla.
+- [Sebastián] Respaldo.sh: `--ruta`, `--desde` y el tipo `anteriores`; Android.sh: `quitadas` y `reinstalar`;
+  Common/Terminal.sh; se sacó la variable SEBASTIAN (la carpeta ya no existe). 114 pruebas nuevas (321).
+
 ## 4.16.0 (24/11/2026)
 - [Sebastián] Panel de Minecraft con el estilo de Prism Launcher: los servidores como mosaicos con su ícono
   (el server-icon.png, o uno pixel-art según sea Vanilla, Paper, Fabric o Forge, con un punto verde si está

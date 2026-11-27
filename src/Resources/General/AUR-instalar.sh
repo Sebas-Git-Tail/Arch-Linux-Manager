@@ -1,5 +1,5 @@
 #!/bin/bash
-# Instala o actualiza apps del AUR sin yay ni paru. Lo abre en konsole la página «Apps del AUR»
+# Instala o actualiza apps del AUR sin yay ni paru. Lo abre en una terminal (konsole u otra) la página «Apps del AUR»
 # y también Actualizar.sh al final (con --sin-pausa). Para cada paquete:
 #   1. baja del AUR la carpeta del paquete (PKGBUILD y lo que lo acompaña);
 #   2. en las computadoras de Sebastián muestra qué cambió desde la última instalación y pregunta

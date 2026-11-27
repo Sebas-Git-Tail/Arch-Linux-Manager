@@ -27,11 +27,12 @@ if puerto_abierto "$SERVIDOR_IP_LOCAL" 8080; then
 elif puerto_abierto "$SERVIDOR_HOST_TAILSCALE" 443; then
     URL="$SERVIDOR_WEB_TAILSCALE"
 else
-    error "Disculpe, se cayó el sistema, vuelva a intentarlo más tarde."
+    error "No hay conexión con el servidor de la casa (no contesta ni por la red de casa ni por Tailscale). Revisá que esta computadora tenga internet y que Tailscale esté encendido, y volvé a intentarlo en un rato."
 fi
 
 CARPETA="$URL/Scripts/General/Tutoriales/"
-listado=$(curl -fsSL "$CARPETA") && [[ -n "$listado" ]] || error "No se pudo conectar a $CARPETA"
+listado=$(curl -fsSL -m 20 "$CARPETA") && [[ -n "$listado" ]] \
+    || error "El servidor contestó, pero no se pudo leer la lista de tutoriales. Volvé a intentarlo en un rato."
 
 encontrados=0
 # Los .mkv que aparecen en los enlaces (href) del listado de la carpeta

@@ -76,8 +76,9 @@ for programa in prismlauncher steam waydroid adb; do
     fi
 done
 
-# Restauración: solo si hay servidor y esta computadora todavía no hizo ningún respaldo
-# (Respaldos.conf lo crea Respaldo.sh después del primer respaldo)
+# Tarjeta «Restauración-Linux»: solo si hay servidor y esta computadora todavía no hizo ningún
+# respaldo (Respaldos.conf lo crea Respaldo.sh después del primer respaldo). Desde la 4.17.0 se
+# puede restaurar siempre desde la página de Respaldo-Linux («Restaurar desde el servidor»).
 if [[ "$servidor" == SI && ! -s "$HOME/.config/Manager/Respaldos.conf" ]]; then
     emitir "RESTAURACION SI"
 else

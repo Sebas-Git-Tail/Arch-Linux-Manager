@@ -3,7 +3,13 @@
 #include "ui_PaginaAndroid.h"
 
 #include <QDir>
+#include <QGroupBox>
+#include <QHBoxLayout>
+#include <QLabel>
+#include <QListWidget>
 #include <QMessageBox>
+#include <QPushButton>
+#include <QVBoxLayout>
 
 PaginaAndroid::PaginaAndroid(const QString &logica, QWidget *parent)
     : QWidget(parent), ui(new Ui::PaginaAndroid),
@@ -11,6 +17,31 @@ PaginaAndroid::PaginaAndroid(const QString &logica, QWidget *parent)
 {
     ui->setupUi(this);
     ui->barraProgreso->hide();
+
+    // «Apps quitadas»: deshacer el debloat app por app, debajo del grupo del debloat
+    grupoQuitadas = new QGroupBox(tr("Apps quitadas"), this);
+    auto *layoutQuitadas = new QVBoxLayout(grupoQuitadas);
+    auto *explicacion = new QLabel(tr("El debloat no borra las apps del celular: las desinstala para ese usuario. "
+                                      "Acá se ven las que se pueden volver a instalar (del usuario elegido arriba) "
+                                      "y se recuperan sin descargar nada."), grupoQuitadas);
+    explicacion->setWordWrap(true);
+    layoutQuitadas->addWidget(explicacion);
+    listaQuitadas = new QListWidget(grupoQuitadas);
+    listaQuitadas->setMaximumHeight(180);
+    listaQuitadas->hide();
+    layoutQuitadas->addWidget(listaQuitadas);
+    auto *botonesQuitadas = new QHBoxLayout;
+    botonVerQuitadas = new QPushButton(QIcon::fromTheme(QStringLiteral("view-list-details")), tr("Ver apps quitadas"), grupoQuitadas);
+    botonReinstalar = new QPushButton(QIcon::fromTheme(QStringLiteral("edit-undo")), tr("Volver a instalar las marcadas"), grupoQuitadas);
+    botonReinstalar->setEnabled(false);
+    botonesQuitadas->addWidget(botonVerQuitadas);
+    botonesQuitadas->addStretch();
+    botonesQuitadas->addWidget(botonReinstalar);
+    layoutQuitadas->addLayout(botonesQuitadas);
+    ui->layoutPrincipal->insertWidget(ui->layoutPrincipal->indexOf(ui->grupoDebloat) + 1, grupoQuitadas);
+    connect(botonVerQuitadas, &QPushButton::clicked, this, &PaginaAndroid::verQuitadas);
+    connect(botonReinstalar, &QPushButton::clicked, this, &PaginaAndroid::reinstalar);
+    connect(listaQuitadas, &QListWidget::itemChanged, this, &PaginaAndroid::actualizarBotonReinstalar);
 
     connect(ui->botonBuscar, &QPushButton::clicked, this, &PaginaAndroid::buscarCelulares);
     connect(ui->comboCelular, &QComboBox::currentIndexChanged, this, &PaginaAndroid::mostrarUsuarios);
@@ -41,6 +72,7 @@ void PaginaAndroid::habilitar(bool habilitado)
     ui->grupoCelular->setEnabled(habilitado);
     ui->grupoApps->setEnabled(habilitado && hayCelular);
     ui->grupoDebloat->setEnabled(habilitado && hayCelular);
+    grupoQuitadas->setEnabled(habilitado && hayCelular);
     ui->botonCancelar->setEnabled(!habilitado && !buscando);
 }
 
@@ -50,6 +82,9 @@ void PaginaAndroid::buscarCelulares()
     noAutorizados.clear();
     usuarios.clear();
     ui->comboCelular->clear();
+    listaQuitadas->clear();      // eran del celular de antes
+    listaQuitadas->hide();
+    actualizarBotonReinstalar();
     ui->etiquetaCelular->setText(tr("Buscando celulares…"));
     habilitar(false);
     proceso.iniciar(script, {QStringLiteral("dispositivos")});
@@ -114,6 +149,51 @@ void PaginaAndroid::debloat()
              tr("Quitando apps…"));
 }
 
+// Apps que siguen en el celular pero no están instaladas para el usuario elegido (o para
+// cualquiera, con «Todos»): las que quitó el debloat
+void PaginaAndroid::verQuitadas()
+{
+    listaQuitadas->clear();
+    listaQuitadas->show();
+    actualizarBotonReinstalar();
+    QStringList argumentos{QStringLiteral("quitadas")};
+    const QString usuario = ui->comboUsuario->currentData().toString();
+    if (!usuario.isEmpty())
+        argumentos << QStringLiteral("--usuario") << usuario;
+    ejecutar(argumentos, tr("Buscando apps quitadas…"));
+}
+
+void PaginaAndroid::actualizarBotonReinstalar()
+{
+    int marcadas = 0;
+    for (int i = 0; i < listaQuitadas->count(); ++i)
+        marcadas += listaQuitadas->item(i)->checkState() == Qt::Checked;
+    botonReinstalar->setEnabled(marcadas > 0);
+    botonReinstalar->setText(marcadas > 1 ? tr("Volver a instalar las marcadas (%1)").arg(marcadas)
+                                          : tr("Volver a instalar las marcadas"));
+}
+
+void PaginaAndroid::reinstalar()
+{
+    QStringList pedidos, nombres;
+    for (int i = 0; i < listaQuitadas->count(); ++i) {
+        const QListWidgetItem *item = listaQuitadas->item(i);
+        if (item->checkState() == Qt::Checked) {
+            pedidos << item->data(Qt::UserRole).toString();     // «usuario:paquete»
+            nombres << item->text();
+        }
+    }
+    if (pedidos.isEmpty())
+        return;
+    if (QMessageBox::question(this, windowTitle(),
+            tr("Se van a volver a instalar estas apps en el celular %1:\n\n%2\n\n¿Continuar?")
+                .arg(ui->comboCelular->currentText(), nombres.mid(0, 15).join(u'\n')
+                                                      + (nombres.size() > 15 ? tr("\n… y %1 más").arg(nombres.size() - 15) : QString())))
+        != QMessageBox::Yes)
+        return;
+    ejecutar(QStringList{QStringLiteral("reinstalar")} + pedidos, tr("Volviendo a instalar apps…"));
+}
+
 void PaginaAndroid::procesarEvento(const QString &palabra, const QString &resto)
 {
     if (palabra == u"DISPOSITIVO") {
@@ -141,6 +221,40 @@ void PaginaAndroid::procesarEvento(const QString &palabra, const QString &resto)
         // DESINSTALADO paquete usuario
         const QStringList partes = resto.split(u' ');
         ui->registro->appendPlainText(tr("Quitada del usuario %1: %2").arg(partes.value(1), partes.value(0)));
+    } else if (palabra == u"QUITADA") {
+        // QUITADA paquete usuario LISTA|OTRA (OTRA: no está en las listas del debloat; suele ser
+        // una app de otro usuario o perfil que este nunca tuvo)
+        const QStringList partes = resto.split(u' ');
+        QString texto = partes.value(0);
+        if (ui->comboUsuario->currentData().toString() == u"todos")
+            texto += tr(" (usuario %1)").arg(partes.value(1));
+        if (partes.value(2) != u"LISTA")
+            texto += tr(" — no es del debloat");
+        auto *item = new QListWidgetItem(texto);
+        item->setData(Qt::UserRole, QStringLiteral("%1:%2").arg(partes.value(1), partes.value(0)));
+        item->setFlags(item->flags() | Qt::ItemIsUserCheckable);
+        item->setCheckState(Qt::Unchecked);
+        if (partes.value(2) != u"LISTA")
+            item->setToolTip(tr("No está en las listas del debloat: puede ser una app de otro usuario o perfil del celular."));
+        // Las del debloat primero
+        if (partes.value(2) == u"LISTA") {
+            int fila = 0;
+            while (fila < listaQuitadas->count() && listaQuitadas->item(fila)->toolTip().isEmpty())    // (las del debloat no tienen)
+                ++fila;
+            listaQuitadas->insertItem(fila, item);
+        } else {
+            listaQuitadas->addItem(item);
+        }
+    } else if (palabra == u"REINSTALADA") {
+        // REINSTALADA paquete usuario: ya no está quitada
+        const QStringList partes = resto.split(u' ');
+        const QString clave = QStringLiteral("%1:%2").arg(partes.value(1), partes.value(0));
+        for (int i = listaQuitadas->count() - 1; i >= 0; --i) {
+            if (listaQuitadas->item(i)->data(Qt::UserRole).toString() == clave)
+                delete listaQuitadas->takeItem(i);
+        }
+        ui->registro->appendPlainText(tr("✓ Instalada de nuevo para el usuario %1: %2").arg(partes.value(1), partes.value(0)));
+        actualizarBotonReinstalar();
     } else if (palabra == u"FALLO") {
         ui->registro->appendPlainText(tr("✗ Falló: %1").arg(resto));
     } else if (palabra == u"LISTO" || palabra == u"ERROR") {
@@ -167,6 +281,9 @@ void PaginaAndroid::terminoProceso(int codigo, bool cancelado)
     }
 
     habilitar(true);
+    if (listaQuitadas->count() == 0)
+        listaQuitadas->hide();
+    actualizarBotonReinstalar();
     if (cancelado)
         tema::mostrarEstado(ui->etiquetaEstado, tr("Cancelado."));
     else if (codigo == 0)

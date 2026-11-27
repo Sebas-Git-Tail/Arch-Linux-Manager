@@ -25,7 +25,8 @@ protected:
 
 private:
     void consultar();                  // instaladas y después la última
-    void instalar(const QString &url);
+    // sinSuma: instalar aunque la versión no publique suma SHA-512 (después de confirmarlo)
+    void instalar(const QString &url, bool sinSuma = false);
     void procesarEvento(const QString &palabra, const QString &resto);
     void terminoProceso(int codigo, bool cancelado);
     void habilitar(bool habilitado);
@@ -36,6 +37,7 @@ private:
     enum class Paso { Nada, Instaladas, Ultima, Instalar } paso = Paso::Nada;
     QString arquitectura;
     QString urlUltima;
+    QString urlInstalando;             // la que se está instalando (para repetir con --sin-suma)
     QStringList instaladas;
     QString mensajeFinal;
     bool consultado = false;

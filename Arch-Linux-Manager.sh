@@ -14,7 +14,6 @@ declare -A rutas=(
     # lógica sin interfaz (la llaman la ventana Qt y los scripts de la interfaz)
     [LOGICA]="$BASE/Logica"
     [GENERAL]="$BASE/General"
-    [SEBASTIAN]="$BASE/Sebastian"
 )
 
 # Exporta cada una como variable de entorno ($COMMON, $LOGICA...) para que la vean la

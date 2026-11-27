@@ -72,7 +72,6 @@ int main(int argc, char *argv[])
     qputenv("COMMON", carpeta.filePath(QStringLiteral("Common")).toUtf8());
     qputenv("LOGICA", carpeta.filePath(QStringLiteral("Logica")).toUtf8());
     qputenv("GENERAL", carpeta.filePath(QStringLiteral("General")).toUtf8());
-    qputenv("SEBASTIAN", carpeta.filePath(QStringLiteral("Sebastian")).toUtf8());
 
     const QString logo = QDir(base).filePath(QStringLiteral("Logo.png"));
     if (QFileInfo::exists(logo))

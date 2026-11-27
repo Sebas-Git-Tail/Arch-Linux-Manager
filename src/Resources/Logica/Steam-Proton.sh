@@ -4,7 +4,11 @@
 #
 # Uso: Steam-Proton.sh ultima          la última versión para esta arquitectura
 #      Steam-Proton.sh instaladas      las versiones de GE-Proton instaladas
-#      Steam-Proton.sh instalar URL    descarga, verifica e instala (quita las anteriores)
+#      Steam-Proton.sh instalar URL [--sin-suma]
+#                                      descarga, verifica e instala (quita las anteriores).
+#                                      Si esa versión no publica su suma SHA-512, no instala
+#                                      nada (SIN_SUMA, código 3) salvo que se pase --sin-suma
+#                                      (la ventana lo pasa solo si el usuario lo confirma).
 #
 # Eventos (stdout, uno por línea):
 #   ARQUITECTURA <x86_64|aarch64...>
@@ -13,10 +17,12 @@
 #   ETAPA <texto>            descargando / verificando / instalando
 #   PROGRESO <0-100>         avance de la descarga (solo cuando cambia)
 #   AVISO <texto>
+#   SIN_SUMA <nombre>        esa versión no publica suma SHA-512: no se instaló (código 3)
 #   LISTO <versión>          quedó instalada
 #   ERROR <texto>            no se pudo (termina)
 #
-# Código de salida: 0 bien, 1 falló la descarga o la instalación, 2 error de uso o de red.
+# Código de salida: 0 bien, 1 falló la descarga o la instalación, 2 error de uso o de red,
+# 3 la versión no publica suma SHA-512 (confirmar y repetir con --sin-suma).
 
 set -uo pipefail
 
@@ -47,11 +53,25 @@ instaladas)
 
 instalar)
     url="${2:-}"
+    sin_suma=no
+    [[ "${3:-}" == --sin-suma ]] && sin_suma=si
     [[ "$url" == https://* && "$url" == *.tar.gz ]] || error "La URL tiene que ser https y terminar en .tar.gz"
     [[ "$url" == *"-$ARQ.tar.gz" ]] || emitir "AVISO Esa versión no es para $ARQ: Steam no va a poder usarla."
     nombre=$(basename "$url")
     temporal=$(mktemp -d)
     trap 'rm -rf "$temporal"' EXIT
+
+    # GE-Proton publica la suma .sha512sum de cada versión: se baja antes que el .tar.gz. Si no
+    # está, no se instala nada sin que el usuario lo acepte (no habría forma de saber si la
+    # descarga está dañada o no es la que publicó GE-Proton)
+    if ! curl -fsSL "${url%.tar.gz}.sha512sum" -o "$temporal/suma.sha512sum" 2>/dev/null \
+            || ! [[ "$(awk '{print $1; exit}' "$temporal/suma.sha512sum")" =~ ^[0-9a-f]{128}$ ]]; then
+        if [[ "$sin_suma" == no ]]; then
+            emitir "SIN_SUMA $nombre"
+            error "$nombre no publica suma SHA-512: no se instaló nada (no se puede comprobar que la descarga esté bien)." 3
+        fi
+        rm -f "$temporal/suma.sha512sum"
+    fi
 
     emitir "ETAPA Descargando $nombre"
     ultimo=""
@@ -63,16 +83,15 @@ instalar)
     done < <(set -o pipefail; wget --progress=dot:mega -O "$temporal/$nombre" "$url" 2>&1)
     wait $! || error "No se pudo descargar $nombre" 1
 
-    # GE-Proton publica la suma .sha512sum de cada versión: si está, se comprueba que la
-    # descarga no esté dañada antes de tocar lo instalado
+    # Se comprueba que la descarga no esté dañada antes de tocar lo instalado
     emitir "ETAPA Verificando"
-    if curl -fsSL "${url%.tar.gz}.sha512sum" -o "$temporal/suma.sha512sum" 2>/dev/null; then
-        esperada=$(awk '{print $1}' "$temporal/suma.sha512sum")
+    if [[ -f "$temporal/suma.sha512sum" ]]; then
+        esperada=$(awk '{print $1; exit}' "$temporal/suma.sha512sum")
         obtenida=$(sha512sum "$temporal/$nombre" | awk '{print $1}')
         [[ "$esperada" == "$obtenida" ]] || error "La descarga está dañada (la suma SHA-512 no coincide)." 1
         emitir "AVISO Suma SHA-512 correcta."
     else
-        emitir "AVISO Esta versión no publica suma SHA-512: no se pudo verificar."
+        emitir "AVISO Instalada sin verificar: esta versión no publica suma SHA-512 (lo aceptaste)."
     fi
 
     emitir "ETAPA Instalando"
@@ -91,6 +110,6 @@ instalar)
     ;;
 
 *)
-    error "Uso: Steam-Proton.sh ultima | instaladas | instalar URL"
+    error "Uso: Steam-Proton.sh ultima | instaladas | instalar URL [--sin-suma]"
     ;;
 esac

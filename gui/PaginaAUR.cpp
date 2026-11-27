@@ -1,5 +1,6 @@
 #include "PaginaAUR.h"
 #include "Tema.h"
+#include "Terminal.h"
 
 #include <QDir>
 #include <QFrame>
@@ -250,13 +251,19 @@ void PaginaAUR::instalar(const QStringList &paquetes)
 {
     if (paquetes.isEmpty() || proceso.ocupado() || terminalAbierta())
         return;
-    // --nofork: el proceso es la ventana misma, así se sabe cuándo se cierra
-    const QStringList argumentos = QStringList{QStringLiteral("--nofork"), QStringLiteral("-e"), QStringLiteral("bash"),
-                                               QDir(base).filePath(QStringLiteral("General/AUR-instalar.sh"))}
-                                   + paquetes;
-    if (!QProcess::startDetached(QStringLiteral("konsole"), argumentos, QDir::homePath(), &pidTerminal) || pidTerminal <= 0) {
+    // En konsole o, si no está, en otra terminal (Common/Terminal.sh). --esperar (konsole --nofork):
+    // el proceso es la ventana misma, así se sabe cuándo se cierra
+    const QString cual = terminal::disponible(base);
+    if (cual.isEmpty()) {
+        tema::mostrarEstado(etiquetaEstado, terminal::sinTerminal(), tema::Estado::Error);
+        return;
+    }
+    const QStringList comando = QStringList{QStringLiteral("bash"), QDir(base).filePath(QStringLiteral("General/AUR-instalar.sh"))}
+                                + paquetes;
+    if (!QProcess::startDetached(QStringLiteral("bash"), terminal::argumentos(base, comando, true), QDir::homePath(), &pidTerminal)
+        || pidTerminal <= 0) {
         pidTerminal = 0;
-        tema::mostrarEstado(etiquetaEstado, tr("No se pudo abrir konsole."), tema::Estado::Error);
+        tema::mostrarEstado(etiquetaEstado, tr("No se pudo abrir la terminal (%1).").arg(cual), tema::Estado::Error);
         return;
     }
     relojTerminal.start();

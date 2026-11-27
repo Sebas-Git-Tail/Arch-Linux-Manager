@@ -58,12 +58,12 @@ void PaginaSteam::consultar()
     proceso.iniciar(script, {QStringLiteral("instaladas")});
 }
 
-void PaginaSteam::instalar(const QString &url)
+void PaginaSteam::instalar(const QString &url, bool sinSuma)
 {
     if (url.isEmpty() || proceso.ocupado())
         return;
-    // Una URL de otra arquitectura no le sirve a Steam: se avisa antes
-    if (!arquitectura.isEmpty() && !url.endsWith(QStringLiteral("-%1.tar.gz").arg(arquitectura))
+    // Una URL de otra arquitectura no le sirve a Steam: se avisa antes (una sola vez)
+    if (!sinSuma && !arquitectura.isEmpty() && !url.endsWith(QStringLiteral("-%1.tar.gz").arg(arquitectura))
         && QMessageBox::warning(this, windowTitle(),
                tr("Esa URL no es para %1 (la arquitectura de esta computadora) y Steam no va a poder "
                   "usarla. ¿Continuar igual?").arg(arquitectura),
@@ -75,8 +75,12 @@ void PaginaSteam::instalar(const QString &url)
     ui->barraProgreso->setValue(0);
     ui->barraProgreso->show();
     paso = Paso::Instalar;
+    urlInstalando = url;
     habilitar(false);
-    proceso.iniciar(script, {QStringLiteral("instalar"), url});
+    QStringList argumentos{QStringLiteral("instalar"), url};
+    if (sinSuma)
+        argumentos << QStringLiteral("--sin-suma");
+    proceso.iniciar(script, argumentos);
 }
 
 void PaginaSteam::procesarEvento(const QString &palabra, const QString &resto)
@@ -126,6 +130,18 @@ void PaginaSteam::terminoProceso(int codigo, bool cancelado)
     case Paso::Instalar:
         if (cancelado) {
             tema::mostrarEstado(ui->etiquetaEstado, tr("Instalación cancelada."));
+        } else if (codigo == 3) {
+            // La versión no publica suma SHA-512: no se instaló nada. Solo con un sí explícito
+            // se instala igual (sin poder comprobar que la descarga esté bien)
+            tema::mostrarEstado(ui->etiquetaEstado, mensajeFinal, tema::Estado::Error);
+            habilitar(true);
+            if (QMessageBox::warning(this, windowTitle(),
+                    tr("Esta versión de GE-Proton no publica su suma SHA-512, así que no hay forma de comprobar "
+                       "que la descarga esté completa y sea la que publicó GE-Proton.\n\n"
+                       "Lo más seguro es elegir otra versión (botón «Ver versiones»). ¿Instalarla igual, sin verificar?"),
+                    QMessageBox::Yes | QMessageBox::No, QMessageBox::No) == QMessageBox::Yes)
+                instalar(urlInstalando, true);
+            return;
         } else if (codigo == 0) {
             ui->barraProgreso->setValue(100);
             tema::mostrarEstado(ui->etiquetaEstado, tr("%1 instalado. Recordá elegirlo en los ajustes de compatibilidad de Steam.")
