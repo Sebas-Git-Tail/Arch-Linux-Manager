@@ -94,6 +94,11 @@ void PaginaAndroid::buscarCelulares()
 // «dispositivos» junto con cada celular: no hay una lista fija)
 void PaginaAndroid::mostrarUsuarios()
 {
+    // Las apps quitadas que se estaban viendo eran de otro celular: «Volver a instalar» las
+    // mandaría al elegido ahora
+    listaQuitadas->clear();
+    listaQuitadas->hide();
+    actualizarBotonReinstalar();
     const QList<QPair<QString, QString>> delCelular = usuarios.value(ui->comboCelular->currentData().toString());
     ui->comboUsuario->clear();
     QStringList ids;

@@ -337,8 +337,10 @@ restauracion)
         copiar "Restaurando" "${proteger[@]}" "$SERVIDOR:$origen/" "$HOME/"
     else
         emitir "DESTINO $DESTINO:$origen/$ruta → $HOME/$ruta"
-        # --relative con «/./»: recrea la ruta desde ese punto (sirve igual para carpetas y archivos)
-        copiar "Restaurando $ruta" --relative "${proteger[@]}" "$SERVIDOR:$origen/./$ruta" "$HOME/"
+        # --relative con «/./»: recrea la ruta desde ese punto (sirve igual para carpetas y archivos).
+        # El rsync del servidor expande comodines: «foto [1].jpg» traería «foto 1.jpg». Se escapan.
+        ruta_remota=$(printf '%s' "$ruta" | sed 's/[][*?\\]/\\&/g')
+        copiar "Restaurando $ruta" --relative "${proteger[@]}" "$SERVIDOR:$origen/./$ruta_remota" "$HOME/"
     fi
     codigo_rsync=$?
     # Lo que se reemplazó acá (si no se reemplazó nada, la carpeta ni se crea)

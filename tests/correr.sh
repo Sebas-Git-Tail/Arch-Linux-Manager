@@ -740,11 +740,14 @@ printf '{"assets": [{"browser_download_url": "https://github.com/x/GE-Proton10-1
 FC="$TMP/curl-steam"; mkdir -p "$FC"
 cat > "$FC/curl" <<'SH'
 #!/bin/bash
-salida="" url=""
-while (( $# )); do case "$1" in -o) salida=$2; shift ;; -m) shift ;; -*) ;; *) url=$1 ;; esac; shift; done
+salida="" url="" formato=""
+while (( $# )); do case "$1" in -o) salida=$2; shift ;; -m) shift ;; -w) formato=$2; shift ;; -*) ;; *) url=$1 ;; esac; shift; done
+[[ -n "${CURL_SIN_RED:-}" ]] && exit 6
 f="$WGET_FIJOS/$(basename "$url")"; [[ "$url" == *api.github.com* ]] && f="$WGET_FIJOS/api.json"
-[[ -f "$f" ]] || exit 22
+if [[ ! -f "$f" ]]; then [[ -n "$formato" ]] && { printf 404; exit 0; }; exit 22; fi
 if [[ -n "$salida" ]]; then cp "$f" "$salida"; else cat "$f"; fi
+[[ -n "$formato" ]] && printf 200
+exit 0
 SH
 chmod +x "$FC/curl"
 STEAM() { WGET_FIJOS="$SF" PATH="$FC:$FW:$PATH" bash "$LOGICA/Steam-Proton.sh" "$@"; }
@@ -760,6 +763,8 @@ salida=$(STEAM instalar "https://github.com/x/GE-Proton10-2-$ARQ.tar.gz"); codig
 igual "sin suma SHA-512 no instala (código 3)" "$codigo" "3"
 grep -qx "SIN_SUMA GE-Proton10-2-$ARQ.tar.gz" <<< "$salida" && ok "avisa SIN_SUMA" || mal "SIN_SUMA" "$salida"
 [[ -d "$STEAMDIR/GE-Proton10-1" && ! -d "$STEAMDIR/GE-Proton10-2" ]] && ok "sin suma deja la instalada como estaba" || mal "sin suma tocó lo instalado"
+salida=$(CURL_SIN_RED=1 STEAM instalar "$URL1"); codigo=$?
+[[ $codigo == 1 ]] && ! grep -q '^SIN_SUMA' <<< "$salida" && ok "sin red al bajar la suma: error de red, no SIN_SUMA" || mal "sin red al bajar la suma" "$codigo $salida"
 salida=$(STEAM instalar "https://github.com/x/GE-Proton10-2-$ARQ.tar.gz" --sin-suma); codigo=$?
 [[ $codigo == 0 && -d "$STEAMDIR/GE-Proton10-2" && ! -d "$STEAMDIR/GE-Proton10-1" ]] && ok "con --sin-suma (confirmado) instala y quita la anterior" || mal "--sin-suma" "$salida"
 salida=$(STEAM instalar "https://github.com/x/GE-Proton10-3-$ARQ.tar.gz"); codigo=$?
@@ -944,6 +949,9 @@ SH
     guardado=$(sed -n 's/^GUARDADOS 1 //p' <<< "$salida")
     igual "lo reemplazado queda en antes-de-restaurar" "$(cat "$guardado/a.txt" 2>/dev/null)" "local"
     [[ "$guardado" == "$HR/.local/share/Arch-Linux-Manager/antes-de-restaurar/"* ]] && ok "antes-de-restaurar en ~/.local/share" || mal "carpeta de guardados" "$guardado"
+    echo real > "$DL/foto [1].jpg"; echo otra > "$DL/foto 1.jpg"
+    salida=$(RESP restauracion --ruta "foto [1].jpg"); codigo=$?
+    igual "restaurar un nombre con [ ] trae ese archivo y no otro" "$codigo|$(cat "$HR/foto [1].jpg" 2>/dev/null)|$([[ -e "$HR/foto 1.jpg" ]] && echo trajo-otro)" "0|real|"
     salida=$(RESP restauracion --ruta no-existe.txt); codigo=$?
     igual "restaurar algo que no está en el respaldo sale con 1" "$codigo" "1"
     grep -q 'No se encontró «no-existe.txt»' <<< "$salida" && ok "lo dice claro" || mal "mensaje de ruta inexistente" "$(grep ERROR <<< "$salida")"

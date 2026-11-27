@@ -63,8 +63,14 @@ instalar)
 
     # GE-Proton publica la suma .sha512sum de cada versión: se baja antes que el .tar.gz. Si no
     # está, no se instala nada sin que el usuario lo acepte (no habría forma de saber si la
-    # descarga está dañada o no es la que publicó GE-Proton)
-    if ! curl -fsSL "${url%.tar.gz}.sha512sum" -o "$temporal/suma.sha512sum" 2>/dev/null \
+    # descarga está dañada o no es la que publicó GE-Proton). Solo un 404 es «no publica suma»:
+    # una falla de red no tiene que terminar en ofrecer instalar sin verificar
+    codigo_http=$(curl -sSL -w '%{http_code}' "${url%.tar.gz}.sha512sum" -o "$temporal/suma.sha512sum" 2>/dev/null)
+    codigo_curl=$?
+    if [[ "$sin_suma" == no ]] && { (( codigo_curl != 0 )) || [[ "$codigo_http" != 200 && "$codigo_http" != 404 ]]; }; then
+        error "No se pudo consultar la suma SHA-512 de $nombre (¿sin conexión?). No se instaló nada." 1
+    fi
+    if [[ "$codigo_http" != 200 ]] \
             || ! [[ "$(awk '{print $1; exit}' "$temporal/suma.sha512sum")" =~ ^[0-9a-f]{128}$ ]]; then
         if [[ "$sin_suma" == no ]]; then
             emitir "SIN_SUMA $nombre"
