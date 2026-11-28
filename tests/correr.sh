@@ -609,6 +609,12 @@ igual "informa la versión instalada" "$(grep -P '^APP claude-desktop\t' <<< "$e
 igual "Claude tiene versión nueva" "$(grep -P '^AUR claude-desktop\t' <<< "$estado" | cut -f2,3 | tr '\t' ' ')" "5.11492.5-1 NUEVA"
 igual "Heroic está al día" "$(grep -P '^AUR heroic' <<< "$estado" | cut -f3)" "AL_DIA"
 igual "Equibop no está instalado" "$(grep -P '^AUR equibop' <<< "$estado" | cut -f3)" "NO_INSTALADA"
+# La interfaz (ProcesoLogica) recorta cada línea: a una app no instalada se le va el último campo vacío.
+# PaginaAUR tiene que aceptarla igual (hasta la 4.18.0 exigía 4 campos y no mostraba las no instaladas).
+campos_equibop=$(grep -P '^APP equibop-bin\t' <<< "$estado" | sed 's/^APP //; s/[[:space:]]*$//' | awk -F'\t' '{print NF}')
+igual "una app no instalada llega a la interfaz con 3 campos" "$campos_equibop" "3"
+grep -q 'palabra == u"APP" && campos.size() >= 3' "$RAIZ/gui/PaginaAUR.cpp" \
+    && ok "PaginaAUR muestra las apps no instaladas (acepta 3 campos)" || mal "PaginaAUR exige más campos de los que llegan"
 grep -q '^AUR lcl-gui-bin' <<< "$estado" && mal "acepta una versión con comandos" || ok "ignora una versión con comandos"
 grep -q 'otro-paquete' <<< "$estado" && mal "muestra un paquete que no pidió" || ok "ignora paquetes que no pidió"
 igual "pendientes: solo las instaladas con versión nueva" "$(AUR pendientes | tr '\n' ' ')" "PENDIENTE claude-desktop "

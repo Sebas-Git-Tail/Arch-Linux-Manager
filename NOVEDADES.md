@@ -3,6 +3,10 @@
 Lo que cambió en cada versión. El Manager lo muestra la primera vez que se abre una versión nueva y siempre
 desde el botón del regalito. Los cambios marcados [Sebastián] solo aparecen en sus equipos.
 
+## 4.18.1 (28/11/2026)
+- Apps del AUR muestra también las apps que todavía no están instaladas, con su botón «Instalar». Desde que
+  existe la sección solo aparecían las que ya tenías instaladas.
+
 ## 4.18.0 (28/11/2026)
 - [Sebastián] En la computadora del instituto, Apps del AUR suma PSeInt, para escribir pseudocódigo y
   diagramas de flujo. Al instalarlo ya queda con las opciones del lenguaje configuradas (por ejemplo: obliga

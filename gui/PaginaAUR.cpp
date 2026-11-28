@@ -109,12 +109,15 @@ void PaginaAUR::consultar()
 void PaginaAUR::procesarEvento(const QString &palabra, const QString &resto)
 {
     const QStringList campos = resto.split(u'\t');
-    if (palabra == u"APP" && campos.size() >= 4) {
+    // «APP paquete⇥nombre⇥descripción⇥instalada»: si no está instalada el último campo va vacío, y
+    // ProcesoLogica recorta la línea (trimmed) y se lleva ese tabulador final. Por eso alcanza con 3
+    // campos: antes se exigían 4 y las apps no instaladas no aparecían (hasta la 4.18.0).
+    if (palabra == u"APP" && campos.size() >= 3) {
         App app;
         app.paquete = campos.at(0);
         app.nombre = campos.at(1);
         app.descripcion = campos.at(2);
-        app.instalada = campos.at(3);
+        app.instalada = campos.value(3);
         lista << app;
         armarLista();
     } else if (palabra == u"AUR" && campos.size() >= 3) {
