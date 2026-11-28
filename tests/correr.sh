@@ -593,14 +593,16 @@ EOF2
 AUR() { PATH="$falso:$PATH" bash "$LOGICA/AUR.sh" "$@"; }
 apps() { AUR estado | sed -n 's/^APP \([^\t]*\).*/\1/p' | tr '\n' ' '; }
 export MANAGER_MAC_PRUEBA="58:11:22:a9:df:de"
-igual "la PC de Sebastián ve las 5" "$(apps)" "claude-desktop equibop-bin heroic-games-launcher-bin lcl-gui-bin playit-bin "
+igual "la PC de Sebastián ve las 5 (sin PSeInt)" "$(apps)" "claude-desktop equibop-bin heroic-games-launcher-bin lcl-gui-bin playit-bin "
+bash "$LOGICA/Entorno.sh" --equipo instituto >/dev/null
+igual "el instituto ve las 5 y PSeInt" "$(apps)" "claude-desktop equibop-bin heroic-games-launcher-bin lcl-gui-bin pseint-bin playit-bin "
 bash "$LOGICA/Entorno.sh" --equipo krocante >/dev/null
 igual "la tía ve solo Claude" "$(apps)" "claude-desktop "
 bash "$LOGICA/Entorno.sh" --equipo auto >/dev/null
 MANAGER_MAC_PRUEBA="18:c0:4d:a2:fe:e0"
 igual "mamá ve solo Claude" "$(apps)" "claude-desktop "
 MANAGER_MAC_PRUEBA="aa:bb:cc:dd:ee:ff"
-igual "otra PC ve todas menos Claude" "$(apps)" "equibop-bin heroic-games-launcher-bin lcl-gui-bin "
+igual "otra PC ve todas menos Claude, Playit y PSeInt" "$(apps)" "equibop-bin heroic-games-launcher-bin lcl-gui-bin "
 MANAGER_MAC_PRUEBA="58:11:22:a9:df:de"
 estado=$(AUR estado)
 igual "informa la versión instalada" "$(grep -P '^APP claude-desktop\t' <<< "$estado" | cut -f4)" "4.4212.0-1"
@@ -622,7 +624,71 @@ instalar equibop-bin; igual "en la PC de mamá rechaza Equibop" "$?" "2"
 MANAGER_MAC_PRUEBA="aa:bb:cc:dd:ee:ff"
 instalar playit-bin; igual "en otra PC rechaza Playit" "$?" "2"
 instalar; igual "AUR-instalar sin paquetes sale con 2" "$?" "2"
-unset MANAGER_MAC_PRUEBA AUR_RPC_FALSA
+MANAGER_MAC_PRUEBA="18:c0:4d:a2:fe:e0"
+instalar pseint-bin; igual "en la PC de mamá rechaza PSeInt" "$?" "2"
+MANAGER_MAC_PRUEBA="aa:bb:cc:dd:ee:ff"
+instalar pseint-bin; igual "en otra PC rechaza PSeInt" "$?" "2"
+MANAGER_MAC_PRUEBA="58:11:22:a9:df:de"
+bash "$LOGICA/Entorno.sh" --equipo auto >/dev/null
+instalar pseint-bin; igual "en la PC de Sebastián rechaza PSeInt (es solo del instituto)" "$?" "2"
+
+echo "PSeInt: perfil del lenguaje y acceso directo (carpeta personal temporal)"
+export PSEINT_DIR="$TMP/opt-pseint"; mkdir -p "$PSEINT_DIR"; echo "20250314" > "$PSEINT_DIR/version"
+PS_CFG="$HOME/.pseint/config"; PS_DESK="$XDG_DATA_HOME/applications/pseint.desktop"
+rm -rf "$HOME/.pseint" "$PS_DESK"
+preparar() { bash -c 'source "$COMMON/Equipo.sh"; source "$COMMON/AUR.sh"; aur_pseint_preparar' > /dev/null; }
+preparar
+igual "crea ~/.pseint/config con la versión instalada" "$(grep '^version=' "$PS_CFG")" "version=20250314"
+igual "perfil personalizado" "$(grep -E '^profile(:source)?=' "$PS_CFG" | tr '\n' ' ')" "profile=<Personalizado> profile:source=custom "
+igual "la fuente de una instalación nueva (Inconsolata)" "$(grep -c -E '^(wx|term)_font_name=Inconsolata$' "$PS_CFG")" "2"
+# Las 24 opciones de la captura Pseint.png, en el orden del diálogo
+esperado="force_init_vars=1 force_define_vars=1 force_semicolon=0 allow_concatenation=1 enable_string_functions=1 word_operators=1 base_zero_arrays=0 allow_dinamyc_dimensions=1 allow_resize_arrays=1 overload_equal=1 enable_user_functions=1 lazy_syntax=1 coloquial_conditions=1 integer_only_switch=0 deduce_negative_for_step=1 use_nassi_shneiderman=0 use_alternative_io_shapes=0 allow_accents=1 prefer_algoritmo=0 prefer_funcion=0 allow_repeat_while=1 allow_for_each=1 prefer_repeat_while=0 protect_for_counter=0"
+igual "las 24 opciones del lenguaje como en la captura" "$(sed -n 's/^profile:\([a-z_]*=[01]\)$/\1/p' "$PS_CFG" | tr '\n' ' ' | sed 's/ $//')" "$esperado"
+grep -q '^Exec=.*/opt-pseint/wxPSeInt %F$' "$PS_DESK" && grep -q '^TryExec=' "$PS_DESK" && grep -q '^X-Arch-Linux-Manager=' "$PS_DESK" \
+    && ok "pone un acceso directo que abre wxPSeInt (con TryExec)" || mal "acceso directo de PSeInt" "$(cat "$PS_DESK" 2>&1)"
+echo "force_semicolon=1 cambiado por el usuario" >> "$PS_CFG"; antes=$(md5sum < "$PS_CFG")
+sed -i 's/^Name=PSeInt$/Name=Viejo/' "$PS_DESK"
+preparar
+igual "no pisa una configuración que ya existe" "$(md5sum < "$PS_CFG")" "$antes"
+igual "rehace su propio acceso directo" "$(grep '^Name=' "$PS_DESK")" "Name=PSeInt"
+printf '[Desktop Entry]\nName=El mío\n' > "$PS_DESK"
+preparar
+igual "no toca un acceso directo que no es del Manager" "$(grep '^Name=' "$PS_DESK")" "Name=El mío"
+rm -rf "$HOME/.pseint" "$PS_DESK"; echo "basura" > "$PSEINT_DIR/version"
+preparar
+igual "con una versión rara usa 20250314" "$(grep '^version=' "$PS_CFG")" "version=20250314"
+
+# De punta a punta: AUR-instalar.sh con curl, makepkg, sudo y pacman falsos (no baja ni instala nada)
+rm -rf "$HOME/.pseint" "$PS_DESK"
+FI="$TMP/falsos-instalar"; mkdir -p "$FI/src/pseint-bin"
+echo "pkgname=pseint-bin" > "$FI/src/pseint-bin/PKGBUILD"; tar -czf "$FI/pseint-bin.tar.gz" -C "$FI/src" pseint-bin
+printf '#!/bin/bash\n# curl falso: el «snapshot» del AUR\nwhile (( $# )); do [[ "$1" == -o ]] && { cp "%s" "$2"; exit 0; }; shift; done; exit 1\n' "$FI/pseint-bin.tar.gz" > "$FI/curl"
+cat > "$FI/makepkg" <<'SH'
+#!/bin/bash
+# makepkg falso: «arma» el paquete principal y el -debug
+if [[ " $* " == *" --packagelist "* ]]; then
+    printf '%s\n' "$PKGDEST/pseint-bin-20250314-2-x86_64.pkg.tar.zst" "$PKGDEST/pseint-bin-debug-20250314-2-x86_64.pkg.tar.zst"
+else
+    touch "$PKGDEST/pseint-bin-20250314-2-x86_64.pkg.tar.zst" "$PKGDEST/pseint-bin-debug-20250314-2-x86_64.pkg.tar.zst"
+fi
+SH
+printf '#!/bin/bash\nexec "$@"\n' > "$FI/sudo"
+printf '#!/bin/bash\n[[ "$1" == -U ]] && printf "%%s\\n" "$@" > "%s/instalados"\nexit 0\n' "$FI" > "$FI/pacman"
+for h in fakeroot debugedit strip; do printf '#!/bin/bash\n' > "$FI/$h"; done
+chmod +x "$FI"/*
+MANAGER_MAC_PRUEBA="58:11:22:a9:df:de"
+bash "$LOGICA/Entorno.sh" --equipo instituto >/dev/null
+# En el instituto muestra el PKGBUILD y pregunta «¿Instalar PSeInt?»: se contesta que sí
+printf 's\n' | PATH="$FI:$PATH" bash "$RES/General/AUR-instalar.sh" --sin-pausa pseint-bin > "$TMP/instalar.log" 2>&1
+igual "instalar PSeInt en el instituto, de punta a punta, sale con 0" "$?" "0"
+# (read -p no muestra la pregunta si la respuesta no viene de una terminal: se mira lo que se muestra antes)
+grep -q "Es la primera vez que se instala desde el Manager" "$TMP/instalar.log" && grep -q "pkgname=pseint-bin" "$TMP/instalar.log" \
+    && ok "en el instituto muestra el PKGBUILD antes de instalar" || mal "revisión en el instituto" "$(tail -5 "$TMP/instalar.log")"
+grep -q 'pseint-bin-20250314' "$FI/instalados" && ! grep -q -- '-debug-' "$FI/instalados" \
+    && ok "instala solo el paquete principal (no el -debug)" || mal "paquetes instalados" "$(cat "$FI/instalados" 2>&1)"
+[[ -f "$PS_CFG" && -f "$PS_DESK" ]] && ok "después de instalar deja el perfil y el acceso directo" || mal "ajustes después de instalar" "$(tail -5 "$TMP/instalar.log")"
+bash "$LOGICA/Entorno.sh" --equipo auto >/dev/null
+unset MANAGER_MAC_PRUEBA AUR_RPC_FALSA PSEINT_DIR
 
 echo "Terminal.sh (terminales falsas: no abre nada)"
 FT="$TMP/terminales"; mkdir -p "$FT"

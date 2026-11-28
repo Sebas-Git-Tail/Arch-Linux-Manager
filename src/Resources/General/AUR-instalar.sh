@@ -4,7 +4,8 @@
 #   1. baja del AUR la carpeta del paquete (PKGBUILD y lo que lo acompaña);
 #   2. en las computadoras de Sebastián muestra qué cambió desde la última instalación y pregunta
 #      (el AUR lo mantienen usuarios: así se ve si alguien metió algo raro);
-#   3. lo arma e instala con makepkg -si (pide la contraseña de sudo) y borra lo descargado.
+#   3. lo arma e instala con makepkg -si (pide la contraseña de sudo) y borra lo descargado;
+#   4. hace los ajustes propios de la app, si tiene (aur_despues_de_instalar: el perfil de PSeInt).
 #
 # Uso: AUR-instalar.sh [--sin-pausa] paquete...
 # Solo acepta las apps de este equipo (Common/AUR.sh). Código de salida: 0 todas bien, 1 alguna
@@ -129,6 +130,8 @@ for paquete in "$@"; do
     fi
     if (( ${#armados[@]} )) && echo "Instalando $nombre…" && como_root pacman -U --noconfirm "${armados[@]}"; then
         echo "✓ $nombre instalado."
+        # Ajustes propios de cada app (por ejemplo, el perfil de PSeInt); si fallan, la app ya quedó instalada
+        aur_despues_de_instalar "$paquete" || echo "(No se pudieron terminar los ajustes de $nombre.)"
         bien+=("$nombre")
         rm -rf "${GUARDADOS:?}/$paquete"
         tar -xzf "$archivo" -C "$GUARDADOS"
